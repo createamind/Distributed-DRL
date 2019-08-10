@@ -2,21 +2,40 @@
 import ray
 import time
 
-ray.init()
+ray.init(object_store_memory=1000000000, redis_max_memory=1000000000)
 
-# A regular Python function.
-def regular_function():
-    return 1
+y=111
+y_id = ray.put(y)
 
-# A Ray remote function.
+
 @ray.remote
-def remote_function():
-    print('done.')
-    return 1
+class Cat:
+    def __init__(self):
+        self.cnt = 0
+        global y_id
+        y_id = ray.put(2)
+    def incre(self):
+        print('done.')
+        time.sleep(1)
+        self.cnt += ray.get(y_id)
+    def get_cnt(self):
+        return self.cnt
 
-remote_function.remote()
+cat = Cat.remote()
 
-result = ray.get(remote_function.remote())
 
-time.sleep(3)
+@ray.remote
+def remote_function(cls1):
+    cls1.incre.remote()
+    return 1 # cls1.get_cnt.remote()
+
+remote_function.remote(cat)
+
+result_id = [remote_function.remote(cat) for _ in range(5)]
+
+result = ray.get(result_id)
+
 print(result)
+
+time.sleep(5)
+print(ray.get(cat.get_cnt.remote()))

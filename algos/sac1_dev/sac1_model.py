@@ -168,6 +168,7 @@ class Sac1(object):
                 o, r, d, _ = test_env.step(self.get_action(o, True))
                 ep_ret += r
                 ep_len += 1
+            print('test ep_ret:', ep_ret)
             rew.append(ep_ret)
 
         sample_times, _, _ = ray.get(replay_buffer.get_counts.remote())

@@ -12,7 +12,7 @@ import os
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string("env_name", 'BipedalWalker-v2', "game env")  # "Pendulum-v0"
+flags.DEFINE_string("env_name", 'LunarLanderContinuous-v2', "game env")  # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
@@ -35,6 +35,7 @@ class ReplayBuffer:
         print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
         print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
+
     def store(self, obs, act, rew, next_obs, done):
         self.obs1_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
@@ -45,7 +46,7 @@ class ReplayBuffer:
         self.size = min(self.size+1, self.max_size)
         self.steps += 1
 
-    def sample_batch(self, batch_size=32):
+    def sample_batch(self, batch_size=128):
         idxs = np.random.randint(0, self.size, size=batch_size)
         self.sample_times += 1
         return dict(obs1=self.obs1_buf[idxs],
@@ -90,12 +91,36 @@ def learner_task(ps, replay_buffer, opt, learner_index):
     weights = ray.get(ps.pull.remote(keys))
     net.set_weights(keys, weights)
 
+    cnt = 1
     while True:
         batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
         net.parameter_update(batch)
-        keys, values = net.get_weights()
-        ps.push.remote(keys, values)
+        if cnt % 300 == 0:
+            keys, values = net.get_weights()
+            ps.push.remote(keys, values)
+        cnt += 1
 
+    #### debug ####
+    # # while True:
+    # time_1 = time.time()
+    # for _ in range(1000):
+    #     batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
+    # time_2 = time.time()
+    # for _ in range(1000):
+    #     net.parameter_update(batch)
+    # time_3 = time.time()
+    # for _ in range(1000):
+    #     keys, values = net.get_weights()
+    # time_4 = time.time()
+    # for _ in range(1000):
+    #     ps.push.remote(keys, values)
+    # time_5 = time.time()
+    # print('batch:', time_2-time_1)
+    # print('update:', time_3-time_2)
+    # print('get_weights:', time_4-time_3)
+    # print('push:', time_5-time_4)
+    #
+    # time.sleep(10000)
 
 @ray.remote
 def worker_task(ps, replay_buffer, opt, worker_index):
@@ -143,6 +168,7 @@ def worker_task(ps, replay_buffer, opt, worker_index):
         # End of episode. Training (ep_len times).
         if d or (ep_len == opt.max_ep_len):
             sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
+            # time.sleep(10000)
             while sample_times > 0 and steps / sample_times > 2:
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
                 time.sleep(0.1)
@@ -179,16 +205,20 @@ if __name__ == '__main__':
     learner_task = [learner_task.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_learners)]
 
     # Keep the main process running! Otherwise everything will shut down when main process finished.
-    time1 = time.time()
+    time0 = time1 = time.time()
+    sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
     while True:
         weights = ray.get(ps.pull.remote(all_keys))
         net.set_weights(all_keys, weights)
 
         ep_ret = net.test_agent(start_time, replay_buffer)
-        sample_times, steps, size = ray.get(replay_buffer.get_counts.remote())
+        sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
         time2 = time.time()
-        print("test_reward:", ep_ret, "sample_times:", sample_times, "steps:", steps, "buffer_size:", size)
-        print('update frequency:', sample_times/(time2-time1))
+        print("test_reward:", ep_ret, "sample_times:", sample_times2, "steps:", steps, "buffer_size:", size)
+        print('update frequency:', (sample_times2-sample_times1)/(time2-time1), 'total time:', time2 - time0)
+        time1 = time2
+        sample_times1 = sample_times2
+
         if steps >= opt.total_epochs * opt.steps_per_epoch:
             exit(0)
         time.sleep(5)
