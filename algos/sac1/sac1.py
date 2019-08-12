@@ -4,7 +4,7 @@ import time
 import ray
 import gym
 
-from parameters import ParametersSac1
+from hyperparams import HyperParameters
 from actor_learner import Actor, Learner
 import os
 
@@ -267,7 +267,7 @@ if __name__ == '__main__':
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     # print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    opt = ParametersSac1(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
+    opt = HyperParameters(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
 
     # Create a parameter server with some random weights.
     net = Learner(opt, job="main")
