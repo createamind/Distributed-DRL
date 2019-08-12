@@ -8,11 +8,13 @@ from parameters import ParametersSac1
 import sac1_model
 import os
 
+import multiprocessing
+import copy
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string("env_name", 'LunarLanderContinuous-v2', "game env")  # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
+flags.DEFINE_string("env_name", "Pendulum-v0", "game env")  # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
@@ -58,6 +60,8 @@ class ReplayBuffer:
     def get_counts(self):
         return self.sample_times, self.steps, self.size
 
+    def get_cache(self):
+        return self.sample_times
 
 @ray.remote
 class ParameterServer(object):
@@ -81,24 +85,58 @@ class ParameterServer(object):
         return [self.weights[key] for key in keys]
 
 
+
+
+
 @ray.remote(num_gpus=1, max_calls=1)
-def learner_task(ps, replay_buffer, opt, learner_index):
+def worker_train(ps, replay_buffer, opt, learner_index):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    net = sac1_model.Sac1(opt, job="learner")
+    net = sac1_model.Learner(opt, job="learner")
     keys = net.get_weights()[0]
     weights = ray.get(ps.pull.remote(keys))
     net.set_weights(keys, weights)
 
+
+
+    # cache for training data and model weights
+    print('os.pid:', os.getpid())
+    q1 = multiprocessing.Queue(10)
+    q2 = multiprocessing.Queue(5)
+
+    def ps_update(q1, q2):
+        print('os.pid of put_data():', os.getpid())
+
+        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+
+        while True:
+            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+
+            if not q2.empty():
+                keys, values = q2.get()
+                ps.push.remote(keys, values)
+
+
+    p1 = multiprocessing.Process(target=ps_update, args=(q1,q2))
+    p1.start()
+
+
     cnt = 1
     while True:
-        batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
+        # batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
+        batch = q1.get()
         net.parameter_update(batch)
         if cnt % 300 == 0:
-            keys, values = net.get_weights()
-            ps.push.remote(keys, values)
+            print('q1.qsize():', q1.qsize(), 'q2.qsize():', q2.qsize())
+            q2.put(net.get_weights())
+            # keys, values = net.get_weights()
+            # ps.push.remote(copy.deepcopy(keys), copy.deepcopy(values))
         cnt += 1
+
+    p1.join()
+
+
 
     #### debug ####
     # # while True:
@@ -122,14 +160,15 @@ def learner_task(ps, replay_buffer, opt, learner_index):
     #
     # time.sleep(10000)
 
+
 @ray.remote
-def worker_task(ps, replay_buffer, opt, worker_index):
+def worker_rollout(ps, replay_buffer, opt, worker_index):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
     env = gym.make(opt.env_name)
 
-    net = sac1_model.Sac1(opt, job="worker")
+    net = sac1_model.Actor(opt, job="worker")
     keys = net.get_weights()[0]
 
     o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
@@ -180,36 +219,24 @@ def worker_task(ps, replay_buffer, opt, worker_index):
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
 
-if __name__ == '__main__':
 
-    ray.init(object_store_memory=1000000000, redis_max_memory=1000000000)
 
+@ray.remote
+def worker_test(ps, replay_buffer, opt, worker_index=0):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    # print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    opt = ParametersSac1(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
+    net = sac1_model.Actor(opt, job="main")
 
-    # Create a parameter server with some random weights.
-    net = sac1_model.Sac1(opt, job="main")
-
-    all_keys, all_values = net.get_weights()
-    ps = ParameterServer.remote(all_keys, all_values)
-    replay_buffer = ReplayBuffer.remote(obs_dim=opt.obs_dim, act_dim=opt.act_dim, size=opt.replay_size)
-
-    # Start some training tasks.
-    worker_tasks = [worker_task.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
-
-    time.sleep(5)
-
-    start_time = time.time()
-    learner_task = [learner_task.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_learners)]
+    keys, weights = net.get_weights()
 
     # Keep the main process running! Otherwise everything will shut down when main process finished.
+    start_time = time.time()
     time0 = time1 = time.time()
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
     while True:
-        weights = ray.get(ps.pull.remote(all_keys))
-        net.set_weights(all_keys, weights)
+        weights = ray.get(ps.pull.remote(keys))
+        net.set_weights(keys, weights)
 
         ep_ret = net.test_agent(start_time, replay_buffer)
         sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
@@ -222,3 +249,31 @@ if __name__ == '__main__':
         if steps >= opt.total_epochs * opt.steps_per_epoch:
             exit(0)
         time.sleep(5)
+
+
+if __name__ == '__main__':
+
+    ray.init(object_store_memory=1000000000, redis_max_memory=1000000000)
+
+    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
+    # print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+
+    opt = ParametersSac1(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
+
+    # Create a parameter server with some random weights.
+    net = sac1_model.Learner(opt, job="main")
+
+    all_keys, all_values = net.get_weights()
+    ps = ParameterServer.remote(all_keys, all_values)
+    replay_buffer = ReplayBuffer.remote(obs_dim=opt.obs_dim, act_dim=opt.act_dim, size=opt.replay_size)
+
+    # Start some training tasks.
+    task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
+
+    time.sleep(5)
+
+    task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_learners)]
+
+    task_test = worker_test.remote(ps, replay_buffer, opt)
+
+    ray.wait([task_test,])

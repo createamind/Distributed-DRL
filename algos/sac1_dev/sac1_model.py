@@ -16,7 +16,8 @@ from core import get_vars
 from core import mlp_actor_critic as actor_critic
 
 
-class Sac1(object):
+
+class Learner(object):
     def __init__(self, opt, job):
         self.opt = opt
         with tf.Graph().as_default():
@@ -100,12 +101,75 @@ class Sac1(object):
                 self.step_ops = [pi_loss, q1_loss, q2_loss, q1, q2, logp_pi, opt.alpha,
                         train_pi_op, train_value_op, self.target_update, train_alpha_op]
 
-            # Set up summary Ops
-            self.test_ops, self.test_vars = self.build_summaries()
-
             # Initializing targets to match main variables
             self.target_init = tf.group([tf.assign(v_targ, v_main)
                                       for v_main, v_targ in zip(get_vars('main'), get_vars('target'))])
+            if job == 'learner':
+                self.sess = tf.Session(
+                    config=tf.ConfigProto(
+                        intra_op_parallelism_threads=1,
+                        inter_op_parallelism_threads=1))
+            else:
+                self.sess = tf.Session(
+                    config=tf.ConfigProto(
+                        device_count={'GPU': 0},
+                        intra_op_parallelism_threads=1,
+                        inter_op_parallelism_threads=1))
+            self.sess.run(tf.global_variables_initializer())
+
+            self.variables = ray.experimental.tf_utils.TensorFlowVariables(
+                self.value_loss, self.sess)
+
+    def set_weights(self, variable_names, weights):
+        self.variables.set_weights(dict(zip(variable_names, weights)))
+        # TODO self.sess.run(self.target_update) which way to update target parameters
+        # self.sess.run(self.target_update)
+        self.sess.run(self.target_init)
+
+    def get_weights(self):
+        weights = self.variables.get_weights()
+        keys = [key for key in list(weights.keys()) if "main" in key]
+        values = [weights[key] for key in keys]
+        return keys, values
+
+    def parameter_update(self, batch):
+        feed_dict = {self.x_ph: batch['obs1'],
+                     self.x2_ph: batch['obs2'],
+                     self.a_ph: batch['acts'],
+                     self.r_ph: batch['rews'],
+                     self.d_ph: batch['done'],
+                     }
+        self.sess.run(self.step_ops, feed_dict)
+
+    def compute_gradients(self, x, y):
+        pass
+
+    def apply_gradients(self, gradients):
+        pass
+
+
+
+
+class Actor(object):
+    def __init__(self, opt, job):
+        self.opt = opt
+        with tf.Graph().as_default():
+            tf.set_random_seed(opt.seed)
+            np.random.seed(opt.seed)
+
+
+            # Inputs to computation graph
+            self.x_ph, self.a_ph, self.x2_ph, self.r_ph, self.d_ph = \
+                core.placeholders(opt.obs_dim, opt.act_dim, opt.obs_dim, None, None)
+
+            # Main outputs from computation graph
+            with tf.variable_scope('main'):
+                self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi = \
+                    actor_critic(self.x_ph, self.x2_ph, self.a_ph, action_space=opt.ac_kwargs["action_space"])
+
+            # Set up summary Ops
+            self.test_ops, self.test_vars = self.build_summaries()
+
             if job == 'learner':
                 self.sess = tf.Session(
                     config=tf.ConfigProto(
@@ -125,13 +189,13 @@ class Sac1(object):
                         opt.num_workers), self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
-                self.value_loss, self.sess)
+                self.pi, self.sess)
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
         # TODO self.sess.run(self.target_update) which way to update target parameters
         # self.sess.run(self.target_update)
-        self.sess.run(self.target_init)
+        # self.sess.run(self.target_init)
 
     def get_weights(self):
         weights = self.variables.get_weights()
@@ -139,24 +203,11 @@ class Sac1(object):
         values = [weights[key] for key in keys]
         return keys, values
 
+
     def get_action(self, o, deterministic=False):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: o.reshape(1, -1)})[0]
 
-    def compute_gradients(self, x, y):
-        pass
-
-    def apply_gradients(self, gradients):
-        pass
-
-    def parameter_update(self, batch):
-        feed_dict = {self.x_ph: batch['obs1'],
-                     self.x2_ph: batch['obs2'],
-                     self.a_ph: batch['acts'],
-                     self.r_ph: batch['rews'],
-                     self.d_ph: batch['done'],
-                     }
-        self.sess.run(self.step_ops, feed_dict)
 
     def test_agent(self, start_time, replay_buffer, n=25):
         test_env = gym.make(self.opt.env_name)
@@ -168,7 +219,7 @@ class Sac1(object):
                 o, r, d, _ = test_env.step(self.get_action(o, True))
                 ep_ret += r
                 ep_len += 1
-            print('test ep_ret:', ep_ret)
+            # print('test ep_ret:', ep_ret)
             rew.append(ep_ret)
 
         sample_times, _, _ = ray.get(replay_buffer.get_counts.remote())
