@@ -103,17 +103,14 @@ class Learner(object):
             # Initializing targets to match main variables
             self.target_init = tf.group([tf.assign(v_targ, v_main)
                                       for v_main, v_targ in zip(get_vars('main'), get_vars('target'))])
-            if job == 'learner':
-                self.sess = tf.Session(
-                    config=tf.ConfigProto(
-                        intra_op_parallelism_threads=1,
-                        inter_op_parallelism_threads=1))
-            else:
-                self.sess = tf.Session(
-                    config=tf.ConfigProto(
-                        device_count={'GPU': 0},
-                        intra_op_parallelism_threads=1,
-                        inter_op_parallelism_threads=1))
+
+            config = tf.ConfigProto()
+            # TODO add to hyperparams.py
+            config.gpu_options.per_process_gpu_memory_fraction = 0.4
+            config.inter_op_parallelism_threads =1
+            config.intra_op_parallelism_threads = 1
+
+            self.sess = tf.Session(config=config)
             self.sess.run(tf.global_variables_initializer())
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
@@ -121,8 +118,6 @@ class Learner(object):
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
-        # TODO self.sess.run(self.target_update) which way to update target parameters
-        # self.sess.run(self.target_update)
         self.sess.run(self.target_init)
 
     def get_weights(self):
@@ -147,15 +142,12 @@ class Learner(object):
         pass
 
 
-
-
 class Actor(object):
     def __init__(self, opt, job):
         self.opt = opt
         with tf.Graph().as_default():
             tf.set_random_seed(opt.seed)
             np.random.seed(opt.seed)
-
 
             # Inputs to computation graph
             self.x_ph, self.a_ph, self.x2_ph, self.r_ph, self.d_ph = \
@@ -187,9 +179,6 @@ class Actor(object):
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
-        # TODO self.sess.run(self.target_update) which way to update target parameters
-        # self.sess.run(self.target_update)
-        # self.sess.run(self.target_init)
 
     def get_weights(self):
         weights = self.variables.get_weights()
@@ -197,11 +186,9 @@ class Actor(object):
         values = [weights[key] for key in keys]
         return keys, values
 
-
     def get_action(self, o, deterministic=False):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: o.reshape(1, -1)})[0]
-
 
     def test(self, start_time, replay_buffer, n=25):
         test_env = gym.make(self.opt.env_name)
@@ -213,7 +200,6 @@ class Actor(object):
                 o, r, d, _ = test_env.step(self.get_action(o, True))
                 ep_ret += r
                 ep_len += 1
-            # print('test ep_ret:', ep_ret)
             rew.append(ep_ret)
 
         sample_times, _, _ = ray.get(replay_buffer.get_counts.remote())

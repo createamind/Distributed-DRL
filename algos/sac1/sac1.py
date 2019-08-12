@@ -16,7 +16,8 @@ import signal
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string("env_name", "LunarLanderContinuous-v2", "game env")  # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
+# "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
+flags.DEFINE_string("env_name", "LunarLanderContinuous-v2", "game env")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
@@ -39,7 +40,6 @@ class ReplayBuffer:
         self.steps, self.sample_times = 0, 0
         print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
         print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
-
 
     def store(self, obs, act, rew, next_obs, done):
         self.obs1_buf[self.ptr] = obs
@@ -67,7 +67,6 @@ class ReplayBuffer:
         return self.sample_times
 
 
-
 @ray.remote
 class ParameterServer(object):
     def __init__(self, keys, values, is_restore=False):
@@ -89,6 +88,7 @@ class ParameterServer(object):
     # def push(self, keys, values):
     #     for key, value in zip(keys, values):
     #         self.weights[key] += value
+
     # TODO push gradients or parameters
     def push(self, keys, values):
         values = [value.copy() for value in values]
@@ -154,8 +154,6 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         cnt += 1
 
     p1.join()
-
-
 
     #### debug ####
     # # while True:
@@ -236,8 +234,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             agent.set_weights(keys, weights)
 
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-
-
 
 
 @ray.remote
