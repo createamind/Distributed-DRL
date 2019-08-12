@@ -6,18 +6,20 @@ import gym
 
 from hyperparams import HyperParameters
 from actor_learner import Actor, Learner
-import os
 
+import os
+import pickle
 import multiprocessing
 import copy
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string("env_name", "Pendulum-v0", "game env")  # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
+flags.DEFINE_string("env_name", "LunarLanderContinuous-v2", "game env")  # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
+flags.DEFINE_string("is_restore", "False", "True or False. True means restore weights from pickle file.")
 
 
 @ray.remote
@@ -72,10 +74,15 @@ class ParameterServer(object):
         # backed by the object store.
 
         if is_restore:
-            values = ... # from saved weights file
-
-        values = [value.copy() for value in values]
-        self.weights = dict(zip(keys, values))
+            try:
+                pickle_in = open("weights.pickle", "rb")
+                self.weights = pickle.load(pickle_in)
+                print("****** weights restored! ******")
+            except:
+                print("------ error: weights.pickle doesn't exist! ------")
+        else:
+            values = [value.copy() for value in values]
+            self.weights = dict(zip(keys, values))
         print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
         print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
     # def push(self, keys, values):
@@ -91,8 +98,10 @@ class ParameterServer(object):
         return [self.weights[key] for key in keys]
 
     # save weights to disk
-    def save_weights(self, keys, values):
-        pass
+    def save_weights(self):
+        pickle_out = open("weights.pickle","wb")
+        pickle.dump(self.weights, pickle_out)
+        pickle_out.close()
 
 
 
@@ -106,8 +115,6 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     keys = agent.get_weights()[0]
     weights = ray.get(ps.pull.remote(keys))
     agent.set_weights(keys, weights)
-
-
 
     # cache for training data and model weights
     print('os.pid:', os.getpid())
@@ -126,10 +133,8 @@ def worker_train(ps, replay_buffer, opt, learner_index):
                 keys, values = q2.get()
                 ps.push.remote(keys, values)
 
-
     p1 = multiprocessing.Process(target=ps_update, args=(q1,q2))
     p1.start()
-
 
     cnt = 1
     while True:
@@ -137,7 +142,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         batch = q1.get()
         agent.train(batch)
         if cnt % 300 == 0:
-            print('q1.qsize():', q1.qsize(), 'q2.qsize():', q2.qsize())
+            # print('q1.qsize():', q1.qsize(), 'q2.qsize():', q2.qsize())
             q2.put(agent.get_weights())
             # keys, values = agent.get_weights()
             # ps.push.remote(copy.deepcopy(keys), copy.deepcopy(values))
@@ -243,6 +248,8 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
     start_time = time.time()
     time0 = time1 = time.time()
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
+    max_ret = -1000
+
     while True:
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
@@ -252,6 +259,12 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
         time2 = time.time()
         print("test_reward:", ep_ret, "sample_times:", sample_times2, "steps:", steps, "buffer_size:", size)
         print('update frequency:', (sample_times2-sample_times1)/(time2-time1), 'total time:', time2 - time0)
+
+        if ep_ret > max_ret:
+            ps.save_weights.remote()
+            print("****** weights saved! ******")
+            max_ret = ep_ret
+
         time1 = time2
         sample_times1 = sample_times2
 
@@ -270,9 +283,12 @@ if __name__ == '__main__':
     opt = HyperParameters(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
 
     # Create a parameter server with some random weights.
-    net = Learner(opt, job="main")
-    all_keys, all_values = net.get_weights()
-    ps = ParameterServer.remote(all_keys, all_values)
+    if FLAGS.is_restore == "True":
+        ps = ParameterServer.remote([], [], is_restore=True)
+    else:
+        net = Learner(opt, job="main")
+        all_keys, all_values = net.get_weights()
+        ps = ParameterServer.remote(all_keys, all_values)
 
     replay_buffer = ReplayBuffer.remote(obs_dim=opt.obs_dim, act_dim=opt.act_dim, size=opt.replay_size)
 
@@ -285,4 +301,4 @@ if __name__ == '__main__':
 
     task_test = worker_test.remote(ps, replay_buffer, opt)
 
-    ray.wait([task_test,])
+    ray.wait([task_test, ])
