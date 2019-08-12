@@ -132,7 +132,7 @@ class Learner(object):
         values = [weights[key] for key in keys]
         return keys, values
 
-    def parameter_update(self, batch):
+    def train(self, batch):
         feed_dict = {self.x_ph: batch['obs1'],
                      self.x2_ph: batch['obs2'],
                      self.a_ph: batch['acts'],
@@ -209,7 +209,7 @@ class Actor(object):
         return self.sess.run(act_op, feed_dict={self.x_ph: o.reshape(1, -1)})[0]
 
 
-    def test_agent(self, start_time, replay_buffer, n=25):
+    def test(self, start_time, replay_buffer, n=25):
         test_env = gym.make(self.opt.env_name)
         rew = []
         for j in range(n):

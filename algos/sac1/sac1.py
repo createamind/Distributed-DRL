@@ -5,7 +5,7 @@ import ray
 import gym
 
 from parameters import ParametersSac1
-import sac1_model
+from actor_learner import Actor, Learner
 import os
 
 import multiprocessing
@@ -63,11 +63,17 @@ class ReplayBuffer:
     def get_cache(self):
         return self.sample_times
 
+
+
 @ray.remote
 class ParameterServer(object):
-    def __init__(self, keys, values):
+    def __init__(self, keys, values, is_restore=False):
         # These values will be mutated, so we must create a copy that is not
         # backed by the object store.
+
+        if is_restore:
+            values = ... # from saved weights file
+
         values = [value.copy() for value in values]
         self.weights = dict(zip(keys, values))
         print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
@@ -84,6 +90,9 @@ class ParameterServer(object):
     def pull(self, keys):
         return [self.weights[key] for key in keys]
 
+    # save weights to disk
+    def save_weights(self, keys, values):
+        pass
 
 
 
@@ -93,10 +102,10 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    net = sac1_model.Learner(opt, job="learner")
-    keys = net.get_weights()[0]
+    agent = Learner(opt, job="learner")
+    keys = agent.get_weights()[0]
     weights = ray.get(ps.pull.remote(keys))
-    net.set_weights(keys, weights)
+    agent.set_weights(keys, weights)
 
 
 
@@ -126,11 +135,11 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     while True:
         # batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
         batch = q1.get()
-        net.parameter_update(batch)
+        agent.train(batch)
         if cnt % 300 == 0:
             print('q1.qsize():', q1.qsize(), 'q2.qsize():', q2.qsize())
-            q2.put(net.get_weights())
-            # keys, values = net.get_weights()
+            q2.put(agent.get_weights())
+            # keys, values = agent.get_weights()
             # ps.push.remote(copy.deepcopy(keys), copy.deepcopy(values))
         cnt += 1
 
@@ -145,10 +154,10 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     #     batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
     # time_2 = time.time()
     # for _ in range(1000):
-    #     net.parameter_update(batch)
+    #     agent.parameter_update(batch)
     # time_3 = time.time()
     # for _ in range(1000):
-    #     keys, values = net.get_weights()
+    #     keys, values = agent.get_weights()
     # time_4 = time.time()
     # for _ in range(1000):
     #     ps.push.remote(keys, values)
@@ -168,8 +177,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     env = gym.make(opt.env_name)
 
-    net = sac1_model.Actor(opt, job="worker")
-    keys = net.get_weights()[0]
+    agent = Actor(opt, job="worker")
+    keys = agent.get_weights()[0]
 
     o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
@@ -177,13 +186,13 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     total_steps = opt.steps_per_epoch * opt.total_epochs
 
     weights = ray.get(ps.pull.remote(keys))
-    net.set_weights(keys, weights)
+    agent.set_weights(keys, weights)
 
     # TODO opt.start_steps
     for t in range(total_steps):
 
         if t > opt.start_steps:
-            a = net.get_action(o)
+            a = agent.get_action(o)
         else:
             a = env.action_space.sample()
 
@@ -214,7 +223,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # update parameters every episode
             weights = ray.get(ps.pull.remote(keys))
-            net.set_weights(keys, weights)
+            agent.set_weights(keys, weights)
 
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
@@ -226,9 +235,9 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    net = sac1_model.Actor(opt, job="main")
+    agent = Actor(opt, job="main")
 
-    keys, weights = net.get_weights()
+    keys, weights = agent.get_weights()
 
     # Keep the main process running! Otherwise everything will shut down when main process finished.
     start_time = time.time()
@@ -236,9 +245,9 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
     while True:
         weights = ray.get(ps.pull.remote(keys))
-        net.set_weights(keys, weights)
+        agent.set_weights(keys, weights)
 
-        ep_ret = net.test_agent(start_time, replay_buffer)
+        ep_ret = agent.test(start_time, replay_buffer)
         sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
         time2 = time.time()
         print("test_reward:", ep_ret, "sample_times:", sample_times2, "steps:", steps, "buffer_size:", size)
@@ -261,10 +270,10 @@ if __name__ == '__main__':
     opt = ParametersSac1(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
 
     # Create a parameter server with some random weights.
-    net = sac1_model.Learner(opt, job="main")
-
+    net = Learner(opt, job="main")
     all_keys, all_values = net.get_weights()
     ps = ParameterServer.remote(all_keys, all_values)
+
     replay_buffer = ReplayBuffer.remote(obs_dim=opt.obs_dim, act_dim=opt.act_dim, size=opt.replay_size)
 
     # Start some training tasks.
