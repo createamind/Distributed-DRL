@@ -11,6 +11,7 @@ import os
 import pickle
 import multiprocessing
 import copy
+import signal
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
@@ -19,7 +20,7 @@ flags.DEFINE_string("env_name", "LunarLanderContinuous-v2", "game env")  # "Pend
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
-flags.DEFINE_string("is_restore", "False", "True or False. True means restore weights from pickle file.")
+flags.DEFINE_string("is_restore", "True", "True or False. True means restore weights from pickle file.")
 
 
 @ray.remote
@@ -104,8 +105,6 @@ class ParameterServer(object):
         pickle_out.close()
 
 
-
-
 @ray.remote(num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
@@ -133,8 +132,14 @@ def worker_train(ps, replay_buffer, opt, learner_index):
                 keys, values = q2.get()
                 ps.push.remote(keys, values)
 
-    p1 = multiprocessing.Process(target=ps_update, args=(q1,q2))
+    p1 = multiprocessing.Process(target=ps_update, args=(q1, q2))
     p1.start()
+
+    def signal_handler(signal, frame):
+        p1.terminate()
+        exit()
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     cnt = 1
     while True:

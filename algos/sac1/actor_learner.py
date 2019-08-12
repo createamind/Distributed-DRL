@@ -16,7 +16,6 @@ from core import get_vars
 from core import mlp_actor_critic as actor_critic
 
 
-
 class Learner(object):
     def __init__(self, opt, job):
         self.opt = opt
@@ -170,17 +169,12 @@ class Actor(object):
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
 
-            if job == 'learner':
-                self.sess = tf.Session(
-                    config=tf.ConfigProto(
-                        intra_op_parallelism_threads=1,
-                        inter_op_parallelism_threads=1))
-            else:
-                self.sess = tf.Session(
-                    config=tf.ConfigProto(
-                        device_count={'GPU': 0},
-                        intra_op_parallelism_threads=1,
-                        inter_op_parallelism_threads=1))
+            self.sess = tf.Session(
+                config=tf.ConfigProto(
+                    device_count={'GPU': 0},
+                    intra_op_parallelism_threads=1,
+                    inter_op_parallelism_threads=1))
+
             self.sess.run(tf.global_variables_initializer())
 
             if job == "main":
