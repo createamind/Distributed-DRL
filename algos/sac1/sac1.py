@@ -103,22 +103,17 @@ class ParameterServer(object):
         pickle_out.close()
 
 
-@ray.remote(num_gpus=1, max_calls=1)
-def worker_train(ps, replay_buffer, opt, learner_index):
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+class Cache(object):
 
-    agent = Learner(opt, job="learner")
-    keys = agent.get_weights()[0]
-    weights = ray.get(ps.pull.remote(keys))
-    agent.set_weights(keys, weights)
+    def __init__(self, replay_buffer):
+        # cache for training data and model weights
+        print('os.pid:', os.getpid())
+        self.replay_buffer = replay_buffer
+        self.q1 = multiprocessing.Queue(10)
+        self.q2 = multiprocessing.Queue(5)
+        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
 
-    # cache for training data and model weights
-    print('os.pid:', os.getpid())
-    q1 = multiprocessing.Queue(10)
-    q2 = multiprocessing.Queue(5)
-
-    def ps_update(q1, q2):
+    def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
         q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
@@ -130,11 +125,30 @@ def worker_train(ps, replay_buffer, opt, learner_index):
                 keys, values = q2.get()
                 ps.push.remote(keys, values)
 
-    p1 = multiprocessing.Process(target=ps_update, args=(q1, q2))
-    p1.start()
+    def start(self):
+        self.p1.start()
+        self.p1.join(10)
+
+    def end(self):
+        self.p1.terminate()
+
+
+@ray.remote(num_gpus=1, max_calls=1)
+def worker_train(ps, replay_buffer, opt, learner_index):
+    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
+    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+
+    agent = Learner(opt, job="learner")
+    keys = agent.get_weights()[0]
+    weights = ray.get(ps.pull.remote(keys))
+    agent.set_weights(keys, weights)
+
+    cache = Cache(replay_buffer)
+
+    cache.start()
 
     def signal_handler(signal, frame):
-        p1.terminate()
+        cache.end()
         exit()
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -142,38 +156,14 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     cnt = 1
     while True:
         # batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
-        batch = q1.get()
+        batch = cache.q1.get()
         agent.train(batch)
         if cnt % 300 == 0:
             # print('q1.qsize():', q1.qsize(), 'q2.qsize():', q2.qsize())
-            q2.put(agent.get_weights())
+            cache.q2.put(agent.get_weights())
             # keys, values = agent.get_weights()
             # ps.push.remote(copy.deepcopy(keys), copy.deepcopy(values))
         cnt += 1
-
-    p1.join()
-
-    #### debug ####
-    # # while True:
-    # time_1 = time.time()
-    # for _ in range(1000):
-    #     batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
-    # time_2 = time.time()
-    # for _ in range(1000):
-    #     agent.parameter_update(batch)
-    # time_3 = time.time()
-    # for _ in range(1000):
-    #     keys, values = agent.get_weights()
-    # time_4 = time.time()
-    # for _ in range(1000):
-    #     ps.push.remote(keys, values)
-    # time_5 = time.time()
-    # print('batch:', time_2-time_1)
-    # print('update:', time_3-time_2)
-    # print('get_weights:', time_4-time_3)
-    # print('push:', time_5-time_4)
-    #
-    # time.sleep(10000)
 
 
 @ray.remote
@@ -267,9 +257,9 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
         time1 = time2
         sample_times1 = sample_times2
 
-        if steps >= opt.total_epochs * opt.steps_per_epoch:
-            exit(0)
-        # if time2 - time0 > 1500:
+        # if steps >= opt.total_epochs * opt.steps_per_epoch:
+        #     exit(0)
+        # if time2 - time0 > 30:
         #     exit(0)
 
         time.sleep(5)
