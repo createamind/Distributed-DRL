@@ -22,6 +22,7 @@ flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
 flags.DEFINE_string("is_restore", "False", "True or False. True means restore weights from pickle file.")
+flags.DEFINE_integer("a_l_ratio", 1, "steps / sample_times")
 
 
 @ray.remote
@@ -221,8 +222,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         # End of episode. Training (ep_len times).
         if d or (ep_len == opt.max_ep_len):
             sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-            # time.sleep(10000)
-            while sample_times > 0 and steps / sample_times > 2:
+
+            while sample_times > 0 and steps / sample_times > FLAGS.a_l_ratio:
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
                 time.sleep(0.1)
 
@@ -268,6 +269,9 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
 
         if steps >= opt.total_epochs * opt.steps_per_epoch:
             exit(0)
+        # if time2 - time0 > 1500:
+        #     exit(0)
+
         time.sleep(5)
 
 

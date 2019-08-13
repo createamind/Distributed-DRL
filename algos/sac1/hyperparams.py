@@ -17,7 +17,9 @@ class HyperParameters:
         # Pendulum-v0
         # self.env_name = 'MountainCarContinuous-v0'
 
-        # TODO
+        # gpu memory fraction
+        self.gpu_fraction = 0.5
+
         env = gym.make(env_name)
         self.obs_dim = env.observation_space.shape[0]
         self.act_dim = env.action_space.shape[0]

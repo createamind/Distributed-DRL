@@ -105,9 +105,8 @@ class Learner(object):
                                       for v_main, v_targ in zip(get_vars('main'), get_vars('target'))])
 
             config = tf.ConfigProto()
-            # TODO add to hyperparams.py
-            config.gpu_options.per_process_gpu_memory_fraction = 0.05
-            config.inter_op_parallelism_threads =1
+            config.gpu_options.per_process_gpu_memory_fraction = opt.gpu_fraction
+            config.inter_op_parallelism_threads = 1
             config.intra_op_parallelism_threads = 1
 
             self.sess = tf.Session(config=config)
