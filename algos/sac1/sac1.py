@@ -223,7 +223,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         if d or (ep_len == opt.max_ep_len):
             sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
 
-            while sample_times > 0 and steps / sample_times > FLAGS.a_l_ratio:
+            while sample_times > 0 and steps / sample_times > opt.a_l_ratio:
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
                 time.sleep(0.1)
 
@@ -282,7 +282,7 @@ if __name__ == '__main__':
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     # print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    opt = HyperParameters(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers)
+    opt = HyperParameters(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers, FLAGS.a_l_ratio)
 
     # Create a parameter server with some random weights.
     if FLAGS.is_restore == "True":

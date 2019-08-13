@@ -6,7 +6,7 @@ import datetime
 
 
 class HyperParameters:
-    def __init__(self, env_name, total_epochs, num_workers=1):
+    def __init__(self, env_name, total_epochs, num_workers=1, a_l_ratio=1):
         # parameters set
 
         # ray_servr_address = ""
@@ -16,6 +16,8 @@ class HyperParameters:
         # BipedalWalker-v2
         # Pendulum-v0
         # self.env_name = 'MountainCarContinuous-v0'
+
+        self.a_l_ratio = a_l_ratio
 
         # gpu memory fraction
         self.gpu_fraction = 0.5
