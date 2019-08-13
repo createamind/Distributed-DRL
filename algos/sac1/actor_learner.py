@@ -104,12 +104,19 @@ class Learner(object):
             self.target_init = tf.group([tf.assign(v_targ, v_main)
                                       for v_main, v_targ in zip(get_vars('main'), get_vars('target'))])
 
-            config = tf.ConfigProto()
-            config.gpu_options.per_process_gpu_memory_fraction = opt.gpu_fraction
-            config.inter_op_parallelism_threads = 1
-            config.intra_op_parallelism_threads = 1
+            if job == "learner":
+                config = tf.ConfigProto()
+                config.gpu_options.per_process_gpu_memory_fraction = opt.gpu_fraction
+                config.inter_op_parallelism_threads = 1
+                config.intra_op_parallelism_threads = 1
+                self.sess = tf.Session(config=config)
+            else:
+                self.sess = tf.Session(
+                    config=tf.ConfigProto(
+                        device_count={'GPU': 0},
+                        intra_op_parallelism_threads=1,
+                        inter_op_parallelism_threads=1))
 
-            self.sess = tf.Session(config=config)
             self.sess.run(tf.global_variables_initializer())
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
