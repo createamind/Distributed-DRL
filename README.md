@@ -3,7 +3,7 @@ Distributed Deep Reinforcement Learning
 
 This framework inspired by general-purpose RL training system **Rapid** from OpenAI.
 
-![rapid-architecture@2x--1-](/home/shuai/Pictures/rapid-architecture@2x--1-.png)
+![rapid-architecture@2x--1-](https://openai.com/content/images/2018/06/rapid-architecture@2x--1-.png)
 
 This framework divides the reinforcement learning process into five parts:
 
