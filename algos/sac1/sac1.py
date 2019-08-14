@@ -22,7 +22,7 @@ flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
 flags.DEFINE_string("is_restore", "False", "True or False. True means restore weights from pickle file.")
-flags.DEFINE_integer("a_l_ratio", 1, "steps / sample_times")
+flags.DEFINE_float("a_l_ratio", 2, "steps / sample_times")
 
 
 @ray.remote
@@ -243,7 +243,7 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
-        ep_ret = agent.test(start_time, replay_buffer)
+        ep_ret = agent.test(replay_buffer)
         sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
         time2 = time.time()
         print("test_reward:", ep_ret, "sample_times:", sample_times2, "steps:", steps, "buffer_size:", size)

@@ -178,7 +178,7 @@ class Actor(object):
             if job == "main":
                 self.writer = tf.summary.FileWriter(
                     opt.summary_dir + "/" + str(datetime.datetime.now()) + "-" + opt.env_name + "-workers_num:" + str(
-                        opt.num_workers), self.sess.graph)
+                        opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.pi, self.sess)
@@ -196,7 +196,7 @@ class Actor(object):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: o.reshape(1, -1)})[0]
 
-    def test(self, start_time, replay_buffer, n=25):
+    def test(self, replay_buffer, n=25):
         test_env = gym.make(self.opt.env_name)
         rew = []
         for j in range(n):
@@ -210,23 +210,20 @@ class Actor(object):
 
         sample_times, _, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={
-            self.test_vars[0]: sum(rew)/25,
-            self.test_vars[1]: sample_times
+            self.test_vars[0]: sum(rew)/25
         })
-        current_time = time.time()
-        self.writer.add_summary(summary_str, current_time-start_time)
+
+        self.writer.add_summary(summary_str, sample_times)
         self.writer.flush()
-        return sum(rew)/25
+        return sum(rew)/n
 
     # Tensorflow Summary Ops
     def build_summaries(self):
         test_summaries = []
         episode_reward = tf.Variable(0.)
-        sample_times = tf.Variable(0.)
         test_summaries.append(tf.summary.scalar("Reward", episode_reward))
-        test_summaries.append(tf.summary.scalar("Sample_times", sample_times))
 
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward, sample_times]
+        test_vars = [episode_reward]
 
         return test_ops, test_vars

@@ -20,7 +20,7 @@ class HyperParameters:
         self.a_l_ratio = a_l_ratio
 
         # gpu memory fraction
-        self.gpu_fraction = 0.5
+        self.gpu_fraction = 0.05
 
         env = gym.make(env_name)
         self.obs_dim = env.observation_space.shape[0]
