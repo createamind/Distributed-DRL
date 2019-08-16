@@ -4,9 +4,9 @@ Distributed Deep Reinforcement Learning
 This framework inspired by general-purpose RL training system **Rapid** from OpenAI.
 
 Rapid framework:
-![rapid-architecture@2x--1-](./Pictures/rapid-architecture@2x--1-.png)
+![rapid-architecture@2x--1-](./pictures/rapid-architecture@2x--1-.png)
 Our framework:
-![ddrlframework](./Pictures/ddrlframework.jpg)
+![ddrlframework](./pictures/ddrlframework.jpg)
 
 This framework divides the reinforcement learning process into five parts:
 
@@ -99,6 +99,6 @@ Env: LunarLanderContinuous-v2
 GPU:GTX1060 x1
 
 **SAC1 without distribution:** gets 200+ in 1200s
-![sac1](./Pictures/sac1.png)
+![sac1](./pictures/sac1.png)
 **Distributed SAC1:** gets 200+ in 360s
-![dsac1](./Pictures/dsac1.png)
+![dsac1](./pictures/dsac1.png)
