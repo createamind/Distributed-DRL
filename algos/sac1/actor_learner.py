@@ -196,8 +196,8 @@ class Actor(object):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: o.reshape(1, -1)})[0]
 
-    def test(self, replay_buffer, n=25):
-        test_env = gym.make(self.opt.env_name)
+    def test(self, test_env, replay_buffer, n=25):
+
         rew = []
         for j in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0

@@ -4,7 +4,7 @@ import time
 import ray
 import gym
 
-from hyperparams import HyperParameters
+from hyperparams import HyperParameters, Wrapper
 from actor_learner import Actor, Learner
 
 import os
@@ -17,7 +17,7 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
-flags.DEFINE_string("env_name", "LunarLanderContinuous-v2", "game env")
+flags.DEFINE_string("env_name", "BipedalWalkerHardcore-v2", "game env")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
@@ -171,7 +171,9 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    env = gym.make(opt.env_name)
+    # env = gym.make(opt.env_name)
+
+    env = Wrapper(gym.make(opt.env_name), opt.obs_noise, opt.act_noise, opt.reward_scale, 3)
 
     agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
@@ -185,13 +187,14 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     agent.set_weights(keys, weights)
 
     # TODO opt.start_steps
-    for t in range(total_steps):
-
+    # for t in range(total_steps):
+    t = 0
+    while True:
         if t > opt.start_steps:
             a = agent.get_action(o)
         else:
             a = env.action_space.sample()
-
+        t += 1
         # Step the env
         o2, r, d, _ = env.step(a)
         ep_ret += r
@@ -225,7 +228,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
 
 @ray.remote
-def worker_test(ps, replay_buffer, opt, worker_index=0):
+def worker_test(ps, replay_buffer, opt):
     print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
     print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
@@ -233,17 +236,17 @@ def worker_test(ps, replay_buffer, opt, worker_index=0):
 
     keys, weights = agent.get_weights()
 
-    # Keep the main process running! Otherwise everything will shut down when main process finished.
-    start_time = time.time()
     time0 = time1 = time.time()
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
     max_ret = -1000
+
+    env = gym.make(opt.env_name)
 
     while True:
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
-        ep_ret = agent.test(replay_buffer)
+        ep_ret = agent.test(env, replay_buffer)
         sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
         time2 = time.time()
         print("test_reward:", ep_ret, "sample_times:", sample_times2, "steps:", steps, "buffer_size:", size)
