@@ -299,12 +299,16 @@ def worker_test(ps, replay_buffer, opt):
         print("----------------------------------")
 
         if sample_times2 // int(1e6) > max_sample_times:
-            ps.save_weights.remote(name=opt.save_dir + "/" + str(sample_times2)[0]+"M_")
+            pickle_out = open(opt.save_dir + "/" + str(sample_times2)[0]+"M_weights.pickle", "wb")
+            pickle.dump(weights, pickle_out)
+            pickle_out.close()
             print("****** Weights saved by time! ******")
             max_sample_times = sample_times2 // int(1e6)
 
         if ep_ret > max_ret:
-            ps.save_weights.remote(name=opt.save_dir + "/" + "Maxret_")
+            pickle_out = open(opt.save_dir + "/" + "Maxret_weights.pickle", "wb")
+            pickle.dump(weights, pickle_out)
+            pickle_out.close()
             print("****** Weights saved by maxret! ******")
             max_ret = ep_ret
 
