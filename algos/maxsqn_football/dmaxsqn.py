@@ -5,7 +5,7 @@ import ray
 import gym
 from gym.spaces import Box, Discrete
 
-from hyperparams_gfootball import HyperParameters
+from hyperparams_gfootball import HyperParameters, FootballWrapper
 from actor_learner import Actor, Learner
 
 import os
@@ -14,6 +14,10 @@ import multiprocessing
 import copy
 import signal
 
+import inspect
+import json
+
+import gfootball
 import gfootball.env as football_env
 
 flags = tf.app.flags
@@ -21,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 
 # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
 flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
-flags.DEFINE_string("exp_name", "c=T,b=256", "experiments name")
+flags.DEFINE_string("exp_name", "c=Tb=256", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
@@ -72,7 +76,6 @@ class ReplayBuffer:
 
     def empty_worker_pool(self):
         self.worker_pool = set()
-
 
 
 @ray.remote
@@ -179,9 +182,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     # ------ env set up ------
     # env = gym.make(opt.env_name)
-    env = football_env.create_environment(env_name=opt.env_name,
-                                          with_checkpoints=False, representation='simple115', render=False
-                                          )
+    env = football_env.create_environment(env_name=opt.rollout_env_name, with_checkpoints=opt.with_checkpoints,
+                                          representation='simple115', render=False)
     env = FootballWrapper(env)
     # ------ env set up end ------
 
@@ -209,7 +211,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             o2, r, d, _ = env.step(a)
         except Exception:
             print("Error, reset env")
-            env = football_env.create_environment(env_name=opt.env_name, with_checkpoints=False,
+            env = football_env.create_environment(env_name=opt.rollout_env_name, with_checkpoints=opt.with_checkpoints,
                                                   representation='simple115', render=False)
             env = FootballWrapper(env)
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
@@ -257,6 +259,7 @@ def worker_test(ps, replay_buffer, opt):
     time0 = time1 = time.time()
     sample_times1, steps, size, _ = ray.get(replay_buffer.get_counts.remote())
     max_ret = -1000
+    max_sample_times = 0
 
     # ------ env set up ------
     test_env = football_env.create_environment(env_name=opt.env_name, with_checkpoints=False,
@@ -294,49 +297,22 @@ def worker_test(ps, replay_buffer, opt):
         print("| num of alive worker:", worker_alive)
         print('- update frequency:', (sample_times2-sample_times1)/(time2-time1), 'total time:', time2 - time0)
         print("----------------------------------")
+
+        if sample_times2 // int(1e6) > max_sample_times:
+            ps.save_weights.remote(name=opt.save_dir + "/" + str(sample_times2)[0]+"M_")
+            print("****** Weights saved by time! ******")
+            max_sample_times = sample_times2 // int(1e6)
+
         if ep_ret > max_ret:
-            ps.save_weights.remote(name=opt.exp_name)
-            print("****** weights saved! ******")
+            ps.save_weights.remote(name=opt.save_dir + "/" + "Maxret_")
+            print("****** Weights saved by maxret! ******")
             max_ret = ep_ret
 
         time1 = time2
         sample_times1 = sample_times2
 
-        # if steps >= opt.total_epochs * opt.steps_per_epoch:
-        #     exit(0)
-        # if time2 - time0 > 30:
-        #     exit(0)
-
         replay_buffer.empty_worker_pool.remote()
         time.sleep(5)
-
-
-# reward wrapper
-class FootballWrapper(object):
-
-    def __init__(self, env):
-        self._env = env
-
-    def __getattr__(self, name):
-        return getattr(self._env, name)
-
-    def step(self, action):
-        obs, reward, done, info = self._env.step(action)
-        # if reward == -1 and reward == 1:
-        #     done = True
-        # else:
-        #     done = False
-        who_controls_ball = obs[7:9]
-        pos_ball = obs[0]
-        distance_to_goal = np.array([(pos_ball + 1) / 2.0, (pos_ball - 1) / 2.0])
-
-        reward += np.dot(who_controls_ball, distance_to_goal) * 0.003
-
-        if reward < 0:
-            reward = 0
-        reward += -0.005
-
-        return obs, reward*100, done, info
 
 
 if __name__ == '__main__':
@@ -347,6 +323,21 @@ if __name__ == '__main__':
 
     # ------ HyperParameters ------
     opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.total_epochs, FLAGS.num_workers, FLAGS.a_l_ratio)
+    All_Parameters = copy.deepcopy(vars(opt))
+    All_Parameters["wrapper"] = inspect.getsource(FootballWrapper)
+    import importlib
+    scenario = importlib.import_module('gfootball.scenarios.{}'.format(opt.rollout_env_name))
+    All_Parameters["rollout_env_class"] = inspect.getsource(scenario.build_scenario)
+    All_Parameters["ac_kwargs"]['action_space'] = ""
+    All_Parameters["obs_space"] = ""
+    All_Parameters["act_space"] = ""
+
+    try:
+        os.makedirs(opt.save_dir)
+    except OSError:
+        pass
+    with open(opt.save_dir + "/" + 'All_Parameters.json', 'w') as fp:
+        json.dump(All_Parameters, fp, indent=4, sort_keys=True)
 
     # ------ end ------
 

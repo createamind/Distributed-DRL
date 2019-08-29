@@ -65,7 +65,8 @@ class Learner(object):
             # ------
 
             # Min Double-Q:
-            min_q_pi = tf.minimum(q1_mu_, q2_mu_)
+            # min_q_pi = tf.minimum(q1_mu_, q2_mu_)
+            min_q_pi = tf.minimum(q1_pi_, q2_pi_)
 
             # Targets for Q and V regression
             v_backup = tf.stop_gradient(min_q_pi - opt.alpha * logp_pi2)  # alpha=0
@@ -118,8 +119,8 @@ class Learner(object):
                 # Set up summary Ops
                 self.train_ops, self.train_vars = self.build_summaries()
                 self.writer = tf.summary.FileWriter(
-                    opt.summary_dir + "/" + "^^^^^^^^^^" + str(datetime.datetime.now()) + opt.env_name
-                    + "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
+                    opt.summary_dir + "/" + "^^^^^^^^^^" + str(datetime.datetime.now()) + opt.env_name + "-" +
+                    opt.exp_name + "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.value_loss, self.sess)
