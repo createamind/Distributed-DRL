@@ -51,7 +51,9 @@ class HyperParameters:
         self.total_epochs = total_epochs
         self.num_workers = num_workers
 
-        self.alpha = 0.1
+        # self.alpha = 0.1
+        self.alpha = "auto"
+        self.target_entropy = 0.4
 
         self.gamma = 0.997
         self.replay_size = 3000000

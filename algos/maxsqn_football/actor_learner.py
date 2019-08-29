@@ -33,23 +33,21 @@ class Learner(object):
             # ------
             # TODO BUG: TypeError: can't pickle _thread.RLock objects
             if opt.alpha == 'auto':
-                # target_entropy = (-np.prod(env.action_space.n))
-                # target_entropy = (np.prod(env.action_space.n))/4/10
-                target_entropy = 0.4
-
                 log_alpha = tf.get_variable('log_alpha', dtype=tf.float32, initializer=0.0)
-                opt.alpha = tf.exp(log_alpha)
+                alpha_v = tf.exp(log_alpha)
+            else:
+                alpha_v = opt.alpha
             # ------
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
                 mu, pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, opt.alpha, action_space=opt.ac_kwargs['action_space'])
+                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v, action_space=opt.ac_kwargs['action_space'])
 
             # Target value network
             with tf.variable_scope('target'):
                 _, _, logp_pi_, _,  _, _,q1_pi_, q2_pi_,q1_mu_, q2_mu_= \
-                    actor_critic(self.x2_ph, self.x2_ph, self.a_ph, opt.alpha, action_space=opt.ac_kwargs['action_space'])
+                    actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v, action_space=opt.ac_kwargs['action_space'])
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -57,8 +55,8 @@ class Learner(object):
             print(('\nNumber of parameters: \t pi: %d, \t' + 'q1: %d, \t q2: %d, \t total: %d\n') % var_counts)
 
             # ------
-            if isinstance(opt.alpha, tf.Tensor):
-                alpha_loss = tf.reduce_mean(-log_alpha * tf.stop_gradient(logp_pi_ + target_entropy))
+            if isinstance(alpha_v, tf.Tensor):
+                alpha_loss = tf.reduce_mean(-log_alpha * tf.stop_gradient(logp_pi_ + opt.target_entropy))
 
                 alpha_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr, name='alpha_optimizer')
                 train_alpha_op = alpha_optimizer.minimize(loss=alpha_loss, var_list=[log_alpha])
@@ -69,7 +67,7 @@ class Learner(object):
             min_q_pi = tf.minimum(q1_pi_, q2_pi_)
 
             # Targets for Q and V regression
-            v_backup = tf.stop_gradient(min_q_pi - opt.alpha * logp_pi2)  # alpha=0
+            v_backup = tf.stop_gradient(min_q_pi - alpha_v * logp_pi2)
             q_backup = self.r_ph + opt.gamma * (1 - self.d_ph) * v_backup
 
             # Soft actor-critic losses
@@ -89,11 +87,11 @@ class Learner(object):
                                           for v_main, v_targ in zip(get_vars('main'), get_vars('target'))])
 
             # All ops to call during one training step
-            if isinstance(opt.alpha, Number):
-                self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(opt.alpha),
+            if isinstance(alpha_v, Number):
+                self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(alpha_v),
                                  train_value_op, target_update]
             else:
-                self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, opt.alpha,
+                self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, alpha_v,
                                  train_value_op, target_update, train_alpha_op]
 
             # Initializing targets to match main variables
@@ -196,10 +194,18 @@ class Actor(object):
             self.x_ph, self.a_ph, self.x2_ph, self.r_ph, self.d_ph = \
                 core.placeholders_from_space(opt.obs_space, opt.act_space, opt.obs_space, None, None)
 
+            # ------
+            if opt.alpha == 'auto':
+                log_alpha = tf.get_variable('log_alpha', dtype=tf.float32, initializer=0.0)
+                alpha_v = tf.exp(log_alpha)
+            else:
+                alpha_v = opt.alpha
+            # ------
+
             # Main outputs from computation graph
             with tf.variable_scope('main'):
                 self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, opt.alpha, action_space=opt.ac_kwargs['action_space'])
+                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v, action_space=opt.ac_kwargs['action_space'])
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
