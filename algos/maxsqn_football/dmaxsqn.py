@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 
 # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
 flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
-flags.DEFINE_string("exp_name", "c=Tb=256", "experiments name")
+flags.DEFINE_string("exp_name", "Exp1", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
@@ -108,6 +108,9 @@ class ParameterServer(object):
 
     def pull(self, keys):
         return [self.weights[key] for key in keys]
+
+    def get_weights(self):
+        return self.weights
 
     # save weights to disk
     def save_weights(self, name):
@@ -270,8 +273,10 @@ def worker_test(ps, replay_buffer, opt):
     # ------ env set up end ------
 
     while True:
+        # weights_all for save it to local
+        weights_all = ray.get(ps.get_weights.remote())
+        weights = [weights_all[key] for key in keys]
 
-        weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
         # In case the env crushed
@@ -300,14 +305,14 @@ def worker_test(ps, replay_buffer, opt):
 
         if sample_times2 // int(1e6) > max_sample_times:
             pickle_out = open(opt.save_dir + "/" + str(sample_times2)[0]+"M_weights.pickle", "wb")
-            pickle.dump(weights, pickle_out)
+            pickle.dump(weights_all, pickle_out)
             pickle_out.close()
             print("****** Weights saved by time! ******")
             max_sample_times = sample_times2 // int(1e6)
 
         if ep_ret > max_ret:
             pickle_out = open(opt.save_dir + "/" + "Maxret_weights.pickle", "wb")
-            pickle.dump(weights, pickle_out)
+            pickle.dump(weights_all, pickle_out)
             pickle_out.close()
             print("****** Weights saved by maxret! ******")
             max_ret = ep_ret
