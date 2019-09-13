@@ -4,6 +4,7 @@ import time
 import ray
 import gym
 from gym.spaces import Box, Discrete
+from collections import deque
 
 from hyperparams_gfootball import HyperParameters, FootballWrapper
 from actor_learner import Actor, Learner
@@ -33,42 +34,45 @@ import gfootball.env as football_env
 
 
 @ray.remote
-class ReplayBuffer:
+class ReplayBuffer_N:
     """
-    A simple FIFO experience replay buffer for SAC agents.
+    A simple FIFO experience replay buffer for SQN_N_STEP agents.
     """
 
-    def __init__(self, obs_dim, act_dim, size):
-        self.obs1_buf = np.zeros([size, obs_dim], dtype=np.float32)
-        self.obs2_buf = np.zeros([size, obs_dim], dtype=np.float32)
-        self.acts_buf = np.zeros([size, act_dim], dtype=np.float32)
-        self.rews_buf = np.zeros(size, dtype=np.float32)
-        self.done_buf = np.zeros(size, dtype=np.float32)
+    def __init__(self, Ln, obs_shape, act_shape, size):
+        self.buffer_o = np.zeros((size, Ln + 1)+obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((size, Ln)+act_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
+        self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
         self.steps, self.sample_times = 0, 0
         self.worker_pool = set()
         print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
         print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    def store(self, obs, act, rew, next_obs, done, worker_index):
-        self.obs1_buf[self.ptr] = obs
-        self.obs2_buf[self.ptr] = next_obs
-        self.acts_buf[self.ptr] = act
-        self.rews_buf[self.ptr] = rew
-        self.done_buf[self.ptr] = done
-        self.ptr = (self.ptr+1) % self.max_size
-        self.size = min(self.size+1, self.max_size)
+    def store(self, o_queue, a_r_d_queue, worker_index):
+        obs, = np.stack(o_queue, axis=1)
+        self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
+
+        a, r, d, = np.stack(a_r_d_queue, axis=1)
+        self.buffer_a[self.ptr] = np.array(list(a), dtype=np.float32)
+        self.buffer_r[self.ptr] = np.array(list(r), dtype=np.float32)
+        self.buffer_d[self.ptr] = np.array(list(d), dtype=np.float32)
+
+        self.ptr = (self.ptr + 1) % self.max_size
+        self.size = min(self.size + 1, self.max_size)
+
         self.steps += 1
         self.worker_pool.add(worker_index)
 
     def sample_batch(self, batch_size=128):
         idxs = np.random.randint(0, self.size, size=batch_size)
         self.sample_times += 1
-        return dict(obs1=self.obs1_buf[idxs],
-                    obs2=self.obs2_buf[idxs],
-                    acts=self.acts_buf[idxs],
-                    rews=self.rews_buf[idxs],
-                    done=self.done_buf[idxs])
+        return dict(obs=self.buffer_o[idxs],
+                    acts=self.buffer_a[idxs],
+                    rews=self.buffer_r[idxs],
+                    done=self.buffer_d[idxs],)
+
 
     def get_counts(self):
         return self.sample_times, self.steps, self.size, len(self.worker_pool)
@@ -184,7 +188,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     # ------ env set up ------
     # env = gym.make(opt.env_name)
-    env = football_env.create_environment(env_name=opt.rollout_env_name, with_checkpoints=opt.with_checkpoints,
+    env = football_env.create_environment(env_name=opt.rollout_env_name,
                                           representation='simple115', render=False)
     env = FootballWrapper(env)
     # ------ env set up end ------
@@ -192,7 +196,25 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
 
+
+
+
+    ################################## deques
+
+    o_queue = deque([], maxlen=opt.Ln + 1)
+    a_r_d_queue = deque([], maxlen=opt.Ln)
+
+    ################################## deques
+
     o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+
+
+    ################################## deques reset
+    t_queue = 1
+    o_queue.append((o,))
+
+    ################################## deques reset
+
 
     # epochs = opt.total_epochs // opt.num_workers
     total_steps = opt.steps_per_epoch * opt.total_epochs
@@ -202,24 +224,16 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     # for t in range(total_steps):
     t = 0
-    num0 = 0
-    episode = []
     while True:
-        if t > opt.start_steps:
-            a = agent.get_action(o)
+        if t > opt.start_steps_per_worker or opt.is_restore:
+            a = agent.get_action(o, deterministic=False)
         else:
             a = env.action_space.sample()
             t += 1
+
         # Step the env
-        try:
-            o2, r, d, _ = env.step(a)
-        except Exception:
-            print("Error, reset env")
-            env = football_env.create_environment(env_name=opt.rollout_env_name, with_checkpoints=opt.with_checkpoints,
-                                                  representation='simple115', render=False)
-            env = FootballWrapper(env)
-            o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-            continue
+        o2, r, d, _ = env.step(a)
+
         ep_ret += r
         ep_len += 1
 
@@ -228,30 +242,31 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         # that isn't based on the agent's state)
         d = False if ep_len == opt.max_ep_len else d
 
-        # Store experience to replay buffer
-        replay_buffer.store.remote(o, a, r, o2, d, worker_index)
-        # episode.append([o, a, r, o2, d])
-
         # Super critical, easy to overlook step: make sure to update
         # most recent observation!
         o = o2
 
+        #################################### deques store
+
+        a_r_d_queue.append( (a, r, d,) )
+        o_queue.append((o2,))
+
+        if t_queue % opt.Ln == 0:
+            replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+
+        if d and t_queue % opt.Ln != 0:
+            for _0 in range(opt.Ln - t_queue % opt.Ln):
+                a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
+                o_queue.append((np.zeros((opt.obs_dim,), dtype=np.float32), ))
+            replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+
+        t_queue += 1
+
+        #################################### deques store
+
+
         # End of episode. Training (ep_len times).
         if d or (ep_len == opt.max_ep_len):
-
-            # # Store experience to replay buffer
-            # if r <= 0.0 and num0 < opt.start_steps:
-            #     print('saving.......................0000000', r, num0, opt.start_steps)
-            #     for transiton in episode:
-            #         replay_buffer.store.remote(*transiton, worker_index)
-            #     num0 += 1
-            # elif r > 0.0:
-            #     print('saving.......................1111111', r, num0, opt.start_steps)
-            #     for transiton in episode:
-            #         replay_buffer.store.remote(*transiton, worker_index)
-            #     num0 -= 15
-            # episode = []
-
 
             sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
 
@@ -266,11 +281,15 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
+            ################################## deques reset
+            t_queue = 1
+            o_queue.append((o,))
+
+            ################################## deques reset
+
 
 @ray.remote
 def worker_test(ps, replay_buffer, opt):
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
     agent = Actor(opt, job="main")
 
@@ -282,8 +301,8 @@ def worker_test(ps, replay_buffer, opt):
     max_sample_times = 0
 
     # ------ env set up ------
-    test_env = football_env.create_environment(env_name=opt.env_name, with_checkpoints=False,
-                                               representation='simple115', render=False)
+    test_env = football_env.create_environment(env_name=opt.rollout_env_name,
+                                          representation='simple115', render=False)
     # test_env = FootballWrapper(test_env)
 
     # test_env = gym.make(opt.env_name)
@@ -297,13 +316,9 @@ def worker_test(ps, replay_buffer, opt):
         agent.set_weights(keys, weights)
 
         # In case the env crushed
-        try:
-            ep_ret = agent.test(test_env, replay_buffer)
-        except Exception:
-            print("Error, reset env")
-            test_env = football_env.create_environment(env_name=opt.rollout_env_name, with_checkpoints=False,
-                                                       representation='simple115', render=False)
-            continue
+
+        ep_ret = agent.test(test_env, replay_buffer)
+
         # ep_ret = agent.test(test_env, replay_buffer)
 
         sample_times2, steps, size, worker_alive = ray.get(replay_buffer.get_counts.remote())
@@ -314,25 +329,26 @@ def worker_test(ps, replay_buffer, opt):
         print("| test_reward:", ep_ret)
         print("| sample_times:", sample_times2)
         print("| steps:", steps)
+        print("| env_steps:", steps*opt.Ln)
         print("| buffer_size:", size)
         print("| actual a_l_ratio:", str(steps/(sample_times2+1))[:4])
         print("| num of alive worker:", worker_alive)
         print('- update frequency:', (sample_times2-sample_times1)/(time2-time1), 'total time:', time2 - time0)
         print("----------------------------------")
 
-        # if sample_times2 // int(1e6) > max_sample_times:
-        #     pickle_out = open(opt.save_dir + "/" + str(sample_times2)[0]+"M_weights.pickle", "wb")
-        #     pickle.dump(weights_all, pickle_out)
-        #     pickle_out.close()
-        #     print("****** Weights saved by time! ******")
-        #     max_sample_times = sample_times2 // int(1e6)
-        #
-        # if ep_ret > max_ret:
-        #     pickle_out = open(opt.save_dir + "/" + "Maxret_weights.pickle", "wb")
-        #     pickle.dump(weights_all, pickle_out)
-        #     pickle_out.close()
-        #     print("****** Weights saved by maxret! ******")
-        #     max_ret = ep_ret
+        if sample_times2 // int(1e6) > max_sample_times:
+            pickle_out = open(opt.save_dir + "/" + str(sample_times2)[0]+"M_weights.pickle", "wb")
+            pickle.dump(weights_all, pickle_out)
+            pickle_out.close()
+            print("****** Weights saved by time! ******")
+            max_sample_times = sample_times2 // int(1e6)
+
+        if ep_ret > max_ret:
+            pickle_out = open(opt.save_dir + "/" + "Maxret_weights.pickle", "wb")
+            pickle.dump(weights_all, pickle_out)
+            pickle_out.close()
+            print("****** Weights saved by maxret! ******")
+            max_ret = ep_ret
 
         time1 = time2
         sample_times1 = sample_times2
@@ -380,20 +396,21 @@ if __name__ == '__main__':
         a_dim = opt.act_dim
     elif isinstance(opt.act_space, Discrete):
         a_dim = 1
-    replay_buffer = ReplayBuffer.remote(obs_dim=opt.obs_dim, act_dim=a_dim, size=opt.replay_size)
 
+    replay_buffer = ReplayBuffer_N.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape,
+                                                size=opt.replay_size)
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(opt.num_workers)]
 
     # store at least start_steps in buffer before training
     _, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
-    while steps < 30000:
+    while steps < opt.start_steps:
         _, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
-        print(steps)
+        print('steps:', steps)
         time.sleep(1)
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
-    task_test = worker_test.remote(ps, replay_buffer, opt)
-
-    ray.wait([task_test, ])
+    while True:
+        task_test = worker_test.remote(ps, replay_buffer, opt)
+        ray.wait([task_test, ])
