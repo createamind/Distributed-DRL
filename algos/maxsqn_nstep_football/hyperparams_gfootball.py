@@ -12,7 +12,7 @@ class HyperParameters:
 
         self.env_name = "academy_3_vs_1_with_keeper"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = '3v1_randomTrue_0.1_scale100_b'
+        self.exp_name = '3v1_0.1'
 
         self.env_random = True
         self.deterministic = False
@@ -57,14 +57,14 @@ class HyperParameters:
 
         self.num_learners = 1
         self.num_workers = 3
-        self.a_l_ratio = 3
+        self.a_l_ratio = 2
 
 
         self.Ln = 3
         self.use_max = False
         self.alpha = 0.1
         # self.alpha = "auto"
-        self.target_entropy = 0.2
+        self.target_entropy = 0.4
 
 
         self.gamma = 0.997
@@ -74,7 +74,7 @@ class HyperParameters:
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
-        self.batch_size = 256
+        self.batch_size = 300
         self.start_steps = int(3e4)
         self.start_steps_per_worker = int(self.start_steps/self.num_workers)
         self.max_ep_len = 300
@@ -114,8 +114,8 @@ class FootballWrapper(object):
                 reward = 0.0
             # reward -= 0.00175
 
-            if obs[0] < 0.0:
-                done = True
+            # if obs[0] < 0.0:
+            #     done = True
 
             # if not done:  # when env is done, ball position will be reset.
             #     reward += self.incentive(obs)
@@ -123,9 +123,9 @@ class FootballWrapper(object):
             r += reward
 
             if done:
-                return obs, r * 100, done, info
+                return obs, r * 150, done, info
 
-        return obs, r * 100, done, info
+        return obs, r * 150, done, info
 
     def incentive(self, obs):
         # total accumulative incentive reward is around 0.5
