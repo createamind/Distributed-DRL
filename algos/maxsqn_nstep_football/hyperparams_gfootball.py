@@ -114,8 +114,8 @@ class FootballWrapper(object):
                 reward = 0.0
             # reward -= 0.00175
 
-            # if obs[0] < 0.0:
-            #     done = True
+            if obs[0] < 0.0:
+                done = True
 
             # if not done:  # when env is done, ball position will be reset.
             #     reward += self.incentive(obs)
