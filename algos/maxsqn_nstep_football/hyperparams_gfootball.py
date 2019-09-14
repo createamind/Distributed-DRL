@@ -10,9 +10,9 @@ class HyperParameters:
     def __init__(self):
         # parameters set
 
-        self.env_name = "academy_3_vs_1_with_keeper"  #'academy_empty_goal' #
+        self.env_name = "11_vs_11_stochastic"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = '3v1_0.1'
+        self.exp_name = '11v11_0.1'
 
         self.env_random = True
         self.deterministic = False
@@ -26,7 +26,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.2
 
-        self.ac_kwargs = dict(hidden_sizes=[600, 400, 200])
+        self.ac_kwargs = dict(hidden_sizes=[400, 600, 400, 200])
 
         env_football = football_env.create_environment(env_name=self.env_name, representation='simple115', render=False)
 
@@ -43,6 +43,8 @@ class HyperParameters:
         scenario_obsdim['academy_3_vs_1_with_keeper_random'] = 51
         scenario_obsdim['academy_single_goal_versus_lazy'] = 115
         scenario_obsdim['academy_single_goal_versus_lazy_random'] = 115
+        scenario_obsdim['11_vs_11_stochastic'] = 115
+        scenario_obsdim['11_vs_11_stochastic_random'] = 115
 
         self.obs_dim = scenario_obsdim[self.rollout_env_name]-7
         self.obs_space = Box(low=-1.0, high=1.0, shape=(self.obs_dim,), dtype=np.float32)
@@ -56,8 +58,8 @@ class HyperParameters:
         self.total_epochs = 200000
 
         self.num_learners = 1
-        self.num_workers = 3
-        self.a_l_ratio = 2
+        self.num_workers = 5
+        self.a_l_ratio = 0.86
 
 
         self.Ln = 3
@@ -77,7 +79,7 @@ class HyperParameters:
         self.batch_size = 300
         self.start_steps = int(3e4)
         self.start_steps_per_worker = int(self.start_steps/self.num_workers)
-        self.max_ep_len = 300
+        self.max_ep_len = 500
         self.save_freq = 1
 
         self.seed = 0
@@ -114,8 +116,8 @@ class FootballWrapper(object):
                 reward = 0.0
             # reward -= 0.00175
 
-            if obs[0] < 0.0:
-                done = True
+            # if obs[0] < 0.0:
+            #     done = True
 
             # if not done:  # when env is done, ball position will be reset.
             #     reward += self.incentive(obs)
