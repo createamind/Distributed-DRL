@@ -16,7 +16,7 @@ import ray.experimental.tf_utils
 
 import core
 from core import get_vars
-from core import mlp_actor_critic as actor_critic
+from core import actor_critic
 
 
 class Learner(object):
@@ -42,12 +42,14 @@ class Learner(object):
             # Main outputs from computation graph
             with tf.variable_scope('main'):
                 mu, pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v, action_space=opt.ac_kwargs['action_space'])
+                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
+                                   action_space=opt.ac_kwargs['action_space'], model=opt.model)
 
             # Target value network
             with tf.variable_scope('target'):
                 _, _, logp_pi_, _,  _, _,q1_pi_, q2_pi_,q1_mu_, q2_mu_= \
-                    actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v, action_space=opt.ac_kwargs['action_space'])
+                    actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
+                                 action_space=opt.ac_kwargs['action_space'], model=opt.model)
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -205,7 +207,8 @@ class Actor(object):
             # Main outputs from computation graph
             with tf.variable_scope('main'):
                 self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v, action_space=opt.ac_kwargs['action_space'])
+                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
+                                   action_space=opt.ac_kwargs['action_space'], model=opt.model)
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -239,7 +242,7 @@ class Actor(object):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
 
-    def test(self, test_env, replay_buffer, n=25):
+    def test(self, test_env, replay_buffer, n=100):
         rew = []
         for j in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
