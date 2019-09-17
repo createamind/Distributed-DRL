@@ -13,6 +13,7 @@ import pickle
 import multiprocessing
 import copy
 import signal
+import datetime
 
 import inspect
 import json
@@ -27,7 +28,7 @@ FLAGS = tf.app.flags.FLAGS
 flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
-flags.DEFINE_integer("num_workers", 1, "number of workers")
+flags.DEFINE_integer("num_workers", 6, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
@@ -37,7 +38,7 @@ flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
 @ray.remote
 class ReplayBuffer:
     """
-    A simple FIFO experience replay buffer for SAC agents.
+    A simple FIFO experience replay buffer for SQN agents.
     """
 
     def __init__(self, obs_dim, act_dim, size):
@@ -232,7 +233,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
                 time.sleep(0.1)
 
-            print("reward:", ep_ret)
+            print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
             # update parameters every episode
             weights = ray.get(ps.pull.remote(keys))
             agent.set_weights(keys, weights)
@@ -266,25 +267,25 @@ def worker_test(ps, replay_buffer, opt, time0, time1):
 
         agent.set_weights(keys, weights)
 
-        # In case the env crushed
-
         ep_ret = agent.test(test_env, replay_buffer)
-
-        # ep_ret = agent.test(test_env, replay_buffer)
 
         sample_times2, steps, size, worker_alive = ray.get(replay_buffer.get_counts.remote())
         time2 = time.time()
-        # print("test_reward:", ep_ret, "sample_times:", sample_times2, "steps:", steps, "buffer_size:", size,
-        #       "actual a_l_ratio:", str(steps/(sample_times2+1))[:4], "num of alive worker:", worker_alive)
+
         print("----------------------------------")
         print("| test_reward:", ep_ret)
         print("| sample_times:", sample_times2)
         print("| steps:", steps)
         print("| buffer_size:", size)
-        print("| actual a_l_ratio:", str(steps/(sample_times2+1))[:4])
+        print("| actual a_l_ratio:", str((steps-opt.start_steps)/(sample_times2+1))[:4])
         print("| num of alive worker:", worker_alive)
         print('- update frequency:', (sample_times2-sample_times1)/(time2-time1), 'total time:', time2 - time0)
         print("----------------------------------")
+
+        if worker_alive < opt.num_workers:
+            worker_rollout.remote(ps, replay_buffer, opt, 9)
+            with open(opt.save_dir + "/" + 'Log.txt', 'a') as fp:
+                fp.write(str(datetime.datetime.now()) + ": worker_train start!\n")
 
         if sample_times2 // int(1e6) > max_sample_times:
             pickle_out = open(opt.save_dir + "/" + str(sample_times2)[0]+"M_weights.pickle", "wb")
@@ -365,6 +366,6 @@ if __name__ == '__main__':
     while True:
         time1 = time.time()
         with open(opt.save_dir + "/" + 'Log.txt', 'a') as fp:
-            fp.write(str(time1)+": worker_test start!\n")
+            fp.write(str(datetime.datetime.now())+": worker_test start!\n")
         task_test = worker_test.remote(ps, replay_buffer, opt, time0, time1)
         ray.wait([task_test, ])

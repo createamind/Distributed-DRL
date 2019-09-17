@@ -31,7 +31,6 @@ class Learner(object):
                 core.placeholders_from_space(opt.obs_space, opt.act_space, opt.obs_space, None, None)
 
             # ------
-            # TODO BUG: TypeError: can't pickle _thread.RLock objects
             if opt.alpha == 'auto':
                 log_alpha = tf.get_variable('log_alpha', dtype=tf.float32, initializer=0.0)
                 alpha_v = tf.exp(log_alpha)
@@ -119,8 +118,7 @@ class Learner(object):
                 # Set up summary Ops
                 self.train_ops, self.train_vars = self.build_summaries()
                 self.writer = tf.summary.FileWriter(
-                    opt.summary_dir + "/" + "^^^^^^^^^^" + str(datetime.datetime.now()) + opt.env_name + "-" +
-                    opt.exp_name + "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
+                    opt.log_dir, self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.value_loss, self.sess)
@@ -143,18 +141,18 @@ class Learner(object):
                      self.d_ph: batch['done'],
                      }
         outs = self.sess.run(self.step_ops, feed_dict)
+        if cnt % 10 == 1:
+            summary_str = self.sess.run(self.train_ops, feed_dict={
+                self.train_vars[0]: outs[0],
+                self.train_vars[1]: outs[1],
+                self.train_vars[2]: np.mean(outs[2]),
+                self.train_vars[3]: np.mean(outs[3]),
+                self.train_vars[4]: np.mean(outs[4]),
+                self.train_vars[5]: outs[5],
+            })
 
-        summary_str = self.sess.run(self.train_ops, feed_dict={
-            self.train_vars[0]: outs[0],
-            self.train_vars[1]: outs[1],
-            self.train_vars[2]: np.mean(outs[2]),
-            self.train_vars[3]: np.mean(outs[3]),
-            self.train_vars[4]: np.mean(outs[4]),
-            self.train_vars[5]: outs[5],
-        })
-
-        self.writer.add_summary(summary_str, cnt)
-        self.writer.flush()
+            self.writer.add_summary(summary_str, cnt)
+            self.writer.flush()
 
     def compute_gradients(self, x, y):
         pass
@@ -223,8 +221,7 @@ class Actor(object):
 
             if job == "main":
                 self.writer = tf.summary.FileWriter(
-                    opt.summary_dir + "/" + str(datetime.datetime.now()) + "-" + opt.env_name + "-" + opt.exp_name +
-                    "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
+                    opt.log_dir, self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.pi, self.sess)
@@ -252,6 +249,7 @@ class Actor(object):
                 ep_ret += r
                 ep_len += 1
             rew.append(ep_ret)
+            print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
         sample_times, _, _, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={

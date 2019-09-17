@@ -82,6 +82,9 @@ class HyperParameters:
         self.summary_dir = cwd + '/tboard_ray'  # Directory for storing tensorboard summary results
         self.save_dir = cwd + '/' + self.exp_name    # Directory for storing trained model
 
+        self.log_dir = self.summary_dir + "/" + str(datetime.datetime.now()) + "-workers_num:" + \
+                       str(self.num_workers) + "%" + str(self.a_l_ratio) + self.env_name + "-" + self.exp_name
+
 
 # reward wrapper
 class FootballWrapper(object):
