@@ -89,12 +89,12 @@ class ParameterServer(object):
 
         if weights_file:
             try:
-                pickle_in = open(opt.save_dir+"/"+weights_file, "rb")
+                pickle_in = open(weights_file, "rb")
                 self.weights = pickle.load(pickle_in)
                 print("****** weights restored! ******")
             except:
                 print("------------------------------------------------")
-                print(opt.save_dir+"/"+weights_file)
+                print(weights_file)
                 print("------ error: weights file doesn't exist! ------")
         else:
             values = [value.copy() for value in values]
@@ -165,11 +165,11 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
     cache.start()
 
-    def signal_handler(signal, frame):
+    def cleanup():
         cache.end()
-        exit()
 
-    signal.signal(signal.SIGINT, signal_handler)
+    import atexit
+    atexit.register(cleanup)
 
     cnt = 1
     while True:
@@ -329,7 +329,7 @@ def worker_test(ps, replay_buffer, opt, time0, time1):
                 fp.write(str(datetime.datetime.now()) + ": worker_train start!\n")
 
         if sample_times2 // int(1e6) > max_sample_times:
-            pickle_out = open(opt.save_dir + "/" + str(sample_times2)[0]+"M_weights.pickle", "wb")
+            pickle_out = open(opt.save_dir + "/" + str(sample_times2)[:3]+"M_weights.pickle", "wb")
             pickle.dump(weights_all, pickle_out)
             pickle_out.close()
             print("****** Weights saved by time! ******")
@@ -353,7 +353,6 @@ if __name__ == '__main__':
 
     ray.init(object_store_memory=1000000000, redis_max_memory=1000000000)
     # ray.init()
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
 
     # ------ HyperParameters ------
     opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.total_epochs, FLAGS.num_workers, FLAGS.a_l_ratio,
@@ -376,7 +375,6 @@ if __name__ == '__main__':
 
     # ------ end ------
 
-    # Create a parameter server with some random weights.
     if FLAGS.weights_file:
         ps = ParameterServer.remote([], [], weights_file=FLAGS.weights_file)
     else:
@@ -389,6 +387,9 @@ if __name__ == '__main__':
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
+
+    if FLAGS.weights_file:
+        opt.start_steps = int(1e6)
 
     # store at least start_steps in buffer before training
     _, steps, _, _ = ray.get(replay_buffer.get_counts.remote())

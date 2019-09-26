@@ -12,36 +12,78 @@ import pickle
 import gfootball.env as football_env
 
 
+flags = tf.app.flags
+FLAGS = tf.app.flags.FLAGS
 
-opt = HyperParameters()
+# "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
+flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
+flags.DEFINE_string("exp_name", "Exp1", "experiments name")
+flags.DEFINE_integer("total_epochs", 500, "total_epochs")
+flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_learners", 1, "number of learners")
+flags.DEFINE_string("weights_file", "", "empty means False. "
+                                        "[/path/Maxret_weights.pickle] means restore weights from this pickle file.")
+flags.DEFINE_float("a_l_ratio", 2, "steps / sample_times")
+
+
+# reward wrapper
+class FootballWrapper(object):
+
+    def __init__(self, env):
+        self._env = env
+
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+    def reset(self):
+        obs = self._env.reset()
+        return obs
+
+    def step(self, action):
+        r = 0.0
+        for _ in range(3):
+            obs, reward, done, info = self._env.step(action)
+
+            r += reward
+
+            if done:
+                return obs, r, done, info
+
+        return obs, r, done, info
+
+opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.total_epochs, FLAGS.num_workers, FLAGS.a_l_ratio,
+                      FLAGS.weights_file)
 
 agent = Actor(opt, job="test")
 keys, weights = agent.get_weights()
-pickle_in = open("./data/11v11_incentive_0.1/Maxret_weights.pickle", "rb")
-weights = pickle.load(pickle_in)
+pickle_in = open("4664_14M.pickle", "rb")
+weights_all = pickle.load(pickle_in)
 
 
-weights = [weights[key] for key in keys]
+weights = [weights_all[key] for key in keys]
 
 agent.set_weights(keys, weights)
 
-test_env = football_env.create_environment(env_name="11_vs_11_stochastic_random",
-                                           representation='simple115', render=True)
+test_env = football_env.create_environment(env_name="11_vs_11_easy_stochastic",
+                                           representation='simple115', render=False)
+# test_env = FootballWrapper(test_env)
+n = 50
 
-num = 100
-
-ave_ep_ret = 0.0
-for j in range(num):
+rew = []
+for j in range(1, n):
     o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-    while not ( d or (ep_len == opt.max_ep_len)):
+    while not d:
 
         action = agent.get_action(o, True)
         # action = test_env.action_space.sample()
 
         o, r, d, _ = test_env.step(action)
-        time.sleep(0.03)
+        # time.sleep(0.03)
         ep_ret += r
         ep_len += 1
 
-    ave_ep_ret = (j * ave_ep_ret + ep_ret) / (j + 1)
-    print('ep_len', ep_len, 'ep_ret:', ep_ret, 'ave_ep_ret:', ave_ep_ret, '({}/{})'.format(j + 1, num))
+    # print("test reward:", ep_ret, ep_len)
+    # exit()
+    rew.append(ep_ret)
+    print("ave test reward:", sum(rew)/j, j)
+print("ave test_reward:", sum(rew)/n)

@@ -96,7 +96,7 @@ Actor-Critics
 """
 
 
-def actor_critic(x, x2,  a, alpha, hidden_sizes=(400,300), activation=tf.nn.relu,
+def actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
                      output_activation=None, policy=softmax_policy, action_space=None, model="mlp"):
 
     if x.shape[1] == 128:                # for Breakout-ram-v4

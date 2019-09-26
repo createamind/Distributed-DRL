@@ -42,12 +42,14 @@ class Learner(object):
             with tf.variable_scope('main'):
                 mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
                     = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
+                                   hidden_sizes=opt.ac_kwargs['hidden_sizes'],
                                    action_space=opt.ac_kwargs['action_space'], model=opt.model)
 
             # Target value network
             with tf.variable_scope('target'):
                 _, _, logp_pi_, _,  _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ = \
                     actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
+                                 hidden_sizes=opt.ac_kwargs['hidden_sizes'],
                                  action_space=opt.ac_kwargs['action_space'], model=opt.model)
 
             # Count variables
@@ -128,7 +130,8 @@ class Learner(object):
                 # Set up summary Ops
                 self.train_ops, self.train_vars = self.build_summaries()
                 self.writer = tf.summary.FileWriter(
-                    opt.log_dir, self.sess.graph)
+                    opt.summary_dir + "/" + "^^^^^^^^^^" + str(datetime.datetime.now()) + opt.env_name + "-" +
+                    opt.exp_name + "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.value_loss, self.sess)
@@ -160,7 +163,7 @@ class Learner(object):
                      self.d_ph: batch['done'],
                      }
         outs = self.sess.run(self.step_ops, feed_dict)
-        if cnt % 10 == 1:
+        if cnt % 300 == 0:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
@@ -224,6 +227,7 @@ class Actor(object):
             with tf.variable_scope('main'):
                 self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
                     = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
+                                   hidden_sizes=opt.ac_kwargs['hidden_sizes'],
                                    action_space=opt.ac_kwargs['action_space'], model=opt.model)
 
             # Set up summary Ops
@@ -239,7 +243,8 @@ class Actor(object):
 
             if job == "main":
                 self.writer = tf.summary.FileWriter(
-                    opt.log_dir, self.sess.graph)
+                    opt.summary_dir + "/" + str(datetime.datetime.now()) + "-" + opt.env_name + "-" + opt.exp_name +
+                    "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.pi, self.sess)
@@ -257,11 +262,11 @@ class Actor(object):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
 
-    def test(self, test_env, replay_buffer, n=100):
+    def test(self, test_env, replay_buffer, n=25):
         rew = []
         for j in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-            while not(d or (ep_len == self.opt.max_ep_len)):
+            while not d:
                 # Take deterministic actions at test time
                 o, r, d, _ = test_env.step(self.get_action(o, True))
                 ep_ret += r
@@ -269,9 +274,10 @@ class Actor(object):
             rew.append(ep_ret)
             print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
-        sample_times, _, _, _ = ray.get(replay_buffer.get_counts.remote())
+        sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={
-            self.test_vars[0]: sum(rew)/n
+            self.test_vars[0]: sum(rew)/n,
+            self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1)
         })
 
         self.writer.add_summary(summary_str, sample_times)
@@ -282,9 +288,10 @@ class Actor(object):
     def build_summaries(self):
         test_summaries = []
         episode_reward = tf.Variable(0.)
+        a_l_ratio = tf.Variable(0.)
         test_summaries.append(tf.summary.scalar("Reward", episode_reward))
-
+        test_summaries.append(tf.summary.scalar("a_l_ratio", a_l_ratio))
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward]
+        test_vars = [episode_reward, a_l_ratio]
 
         return test_ops, test_vars
