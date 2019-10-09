@@ -56,7 +56,7 @@ opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.total_epochs, FLAGS.
 
 agent = Actor(opt, job="test")
 keys, weights = agent.get_weights()
-pickle_in = open("4664_14M.pickle", "rb")
+pickle_in = open("./Weights/43_8M.pickle", "rb")
 weights_all = pickle.load(pickle_in)
 
 
@@ -66,11 +66,11 @@ agent.set_weights(keys, weights)
 
 test_env = football_env.create_environment(env_name="11_vs_11_easy_stochastic",
                                            representation='simple115', render=False)
-# test_env = FootballWrapper(test_env)
-n = 50
+test_env = FootballWrapper(test_env)
+n = 100
 
 rew = []
-for j in range(1, n):
+for j in range(1, n+1):
     o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
     while not d:
 

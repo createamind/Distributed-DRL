@@ -329,7 +329,7 @@ def worker_test(ps, replay_buffer, opt, time0, time1):
                 fp.write(str(datetime.datetime.now()) + ": worker_train start!\n")
 
         if sample_times2 // int(1e6) > max_sample_times:
-            pickle_out = open(opt.save_dir + "/" + str(sample_times2)[:3]+"M_weights.pickle", "wb")
+            pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3]+"M_weights.pickle", "wb")
             pickle.dump(weights_all, pickle_out)
             pickle_out.close()
             print("****** Weights saved by time! ******")
