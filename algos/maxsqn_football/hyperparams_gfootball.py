@@ -12,7 +12,7 @@ class HyperParameters:
 
         self.env_name = "11_vs_11_easy_stochastic"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = '11v11_easy_643_33_200_done'
+        self.exp_name = '11v11_easy_643_33_200_done_bn'
 
         self.env_random = False
         self.deterministic = False

@@ -43,12 +43,16 @@ class Learner(object):
             # Main outputs from computation graph
             with tf.variable_scope('main'):
                 mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
-                                                                                             action_space=opt.act_space)
+                                                                                                  action_space=opt.act_space,
+                                                                                                  phase=True,
+                                                                                                  coefficent_regularizer=0.01)
 
             # Target value network
             with tf.variable_scope('target'):
                 _, _, logp_pi_, _, _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
-                                                                                       action_space=opt.act_space)
+                                                                                       action_space=opt.act_space,
+                                                                                       phase=True,
+                                                                                       coefficent_regularizer=0.01)
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -88,7 +92,9 @@ class Learner(object):
             value_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr)
             value_params = get_vars('main/q')
 
-            train_value_op = value_optimizer.minimize(self.value_loss, var_list=value_params)
+            bn_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(bn_update_ops):
+                train_value_op = value_optimizer.minimize(self.value_loss, var_list=value_params)
 
             # Polyak averaging for target variables
             # (control flow because sess.run otherwise evaluates in nondeterministic order)
@@ -128,8 +134,11 @@ class Learner(object):
                 self.train_ops, self.train_vars = self.build_summaries()
                 self.writer = tf.summary.FileWriter(opt.summary_dir+'-train', self.sess.graph)
 
+            variables_all = tf.contrib.framework.get_variables_to_restore()
+            variables_bn = [v for v in variables_all if 'moving_mean' in v.name or 'moving_variance' in v.name]
+
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
-                self.value_loss, self.sess)
+                self.value_loss, self.sess, input_variables=variables_bn)
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
@@ -222,7 +231,8 @@ class Actor(object):
             # Main outputs from computation graph
             with tf.variable_scope('main'):
                 self.mu, self.pi, _, _, _, _, _, _, _, _, = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
-                                                                                             action_space=opt.act_space)
+                                                                         action_space=opt.act_space,
+                                                                         phase=False, coefficent_regularizer=0.01)
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -238,8 +248,11 @@ class Actor(object):
             if job == "main":
                 self.writer = tf.summary.FileWriter(opt.summary_dir+'-test', self.sess.graph)
 
+            variables_all = tf.contrib.framework.get_variables_to_restore()
+            variables_bn = [v for v in variables_all if 'moving_mean' in v.name or 'moving_variance' in v.name]
+
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
-                self.pi, self.sess)
+                self.pi, self.sess, input_variables=variables_bn)
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
