@@ -16,7 +16,7 @@ import ray.experimental.tf_utils
 
 import core
 from core import get_vars
-from core import actor_critic
+from core import mlp_actor_critic as actor_critic
 
 
 class Learner(object):
@@ -27,10 +27,11 @@ class Learner(object):
             np.random.seed(opt.seed)
 
             # Inputs to computation graph
-            self.x_ph, self.a_ph, self.x2_ph, self.r_ph, self.d_ph = \
-                core.placeholders_from_space(opt.obs_space, opt.act_space, opt.obs_space, None, None)
+            self.x_ph, self.a_ph, self.x2_ph, = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
+            self.r_ph, self.d_ph, self.logp_pi_ph = core.placeholders((opt.Ln,), (opt.Ln,), (opt.Ln,))
 
             # ------
+            # TODO BUG: TypeError: can't pickle _thread.RLock objects
             if opt.alpha == 'auto':
                 log_alpha = tf.get_variable('log_alpha', dtype=tf.float32, initializer=0.0)
                 alpha_v = tf.exp(log_alpha)
@@ -38,17 +39,16 @@ class Learner(object):
                 alpha_v = opt.alpha
             # ------
 
+
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                mu, pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   action_space=opt.ac_kwargs['action_space'], model=opt.model)
+                mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                                                                                             action_space=opt.act_space)
 
             # Target value network
             with tf.variable_scope('target'):
-                _, _, logp_pi_, _,  _, _,q1_pi_, q2_pi_,q1_mu_, q2_mu_= \
-                    actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
-                                 action_space=opt.ac_kwargs['action_space'], model=opt.model)
+                _, _, logp_pi_, _, _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                                                                                       action_space=opt.act_space)
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -56,7 +56,7 @@ class Learner(object):
             print(('\nNumber of parameters: \t pi: %d, \t' + 'q1: %d, \t q2: %d, \t total: %d\n') % var_counts)
 
             # ------
-            if isinstance(alpha_v, tf.Tensor):
+            if opt.alpha == 'auto':
                 alpha_loss = tf.reduce_mean(-log_alpha * tf.stop_gradient(logp_pi_ + opt.target_entropy))
 
                 alpha_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr, name='alpha_optimizer')
@@ -64,12 +64,21 @@ class Learner(object):
             # ------
 
             # Min Double-Q:
-            # min_q_pi = tf.minimum(q1_mu_, q2_mu_)
-            min_q_pi = tf.minimum(q1_pi_, q2_pi_)
+            if opt.use_max:
+                min_q_pi = tf.minimum(q1_mu_, q2_mu_)
+            else:
+                min_q_pi = tf.minimum(q1_pi_, q2_pi_)  # x2
 
-            # Targets for Q and V regression
-            v_backup = tf.stop_gradient(min_q_pi - alpha_v * logp_pi2)
-            q_backup = self.r_ph + opt.gamma * (1 - self.d_ph) * v_backup
+            # get rid of abnormal explosion
+            min_q_pi = tf.clip_by_value(min_q_pi, -1000.0, 2000.0)
+
+
+            #### n-step backup
+            q_backup = tf.stop_gradient(min_q_pi)
+            for step_i in reversed(range(opt.Ln)):
+                q_backup = self.r_ph[:, step_i] + opt.gamma * (1 - self.d_ph[:, step_i]) * (-alpha_v * self.logp_pi_ph[:, step_i] + q_backup)
+            ####
+
 
             # Soft actor-critic losses
             q1_loss = 0.5 * tf.reduce_mean((q_backup - q1) ** 2)
@@ -117,8 +126,7 @@ class Learner(object):
             if job == "learner":
                 # Set up summary Ops
                 self.train_ops, self.train_vars = self.build_summaries()
-                self.writer = tf.summary.FileWriter(
-                    opt.log_dir, self.sess.graph)
+                self.writer = tf.summary.FileWriter(opt.summary_dir+'-train', self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.value_loss, self.sess)
@@ -133,15 +141,25 @@ class Learner(object):
         values = [weights[key] for key in keys]
         return keys, values
 
+    def get_logp_pi(self, x):
+        logp_pi_s = []
+        for Ln_i in range(self.opt.Ln):
+            logp_pi_s.append( self.sess.run(self.logp_pi2, feed_dict={self.x2_ph: x[:,Ln_i+1]}) )
+        batch_logp_pi = np.stack(logp_pi_s, axis=1)    # or np.swapaxes(np.array(entropy), 0, 1)
+        return batch_logp_pi
+
     def train(self, batch, cnt):
-        feed_dict = {self.x_ph: batch['obs1'],
-                     self.x2_ph: batch['obs2'],
-                     self.a_ph: batch['acts'],
+        batch_logp_pi = self.get_logp_pi(batch['obs'])
+        feed_dict = {self.x_ph: batch['obs'][:, 0],
+                     self.x2_ph: batch['obs'][:, -1],
+                     self.a_ph: batch['acts'][:, 0],
+                     self.logp_pi_ph: batch_logp_pi,
                      self.r_ph: batch['rews'],
                      self.d_ph: batch['done'],
                      }
         outs = self.sess.run(self.step_ops, feed_dict)
-        if cnt % 10 == 1:
+
+        if cnt % 1000 == 1:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
@@ -191,8 +209,7 @@ class Actor(object):
             np.random.seed(opt.seed)
 
             # Inputs to computation graph
-            self.x_ph, self.a_ph, self.x2_ph, self.r_ph, self.d_ph = \
-                core.placeholders_from_space(opt.obs_space, opt.act_space, opt.obs_space, None, None)
+            self.x_ph, self.a_ph, self.x2_ph, = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
 
             # ------
             if opt.alpha == 'auto':
@@ -204,9 +221,8 @@ class Actor(object):
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   action_space=opt.ac_kwargs['action_space'], model=opt.model)
+                self.mu, self.pi, _, _, _, _, _, _, _, _, = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                                                                                             action_space=opt.act_space)
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -220,8 +236,7 @@ class Actor(object):
             self.sess.run(tf.global_variables_initializer())
 
             if job == "main":
-                self.writer = tf.summary.FileWriter(
-                    opt.log_dir, self.sess.graph)
+                self.writer = tf.summary.FileWriter(opt.summary_dir+'-test', self.sess.graph)
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
                 self.pi, self.sess)
@@ -235,25 +250,26 @@ class Actor(object):
         values = [weights[key] for key in keys]
         return keys, values
 
-    def get_action(self, o, deterministic=False):
+    def get_action(self, o, deterministic):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
 
-    def test(self, test_env, replay_buffer, n=100):
+    def test(self, test_env, replay_buffer, n=50):
         rew = []
         for j in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-            while not(d or (ep_len == self.opt.max_ep_len)):
+            while not d: #(d or (ep_len == self.opt.max_ep_len)):
                 # Take deterministic actions at test time
-                o, r, d, _ = test_env.step(self.get_action(o, True))
+                o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
                 ep_ret += r
                 ep_len += 1
             rew.append(ep_ret)
             print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
+
         sample_times, _, _, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={
-            self.test_vars[0]: sum(rew)/n
+            self.test_vars[0]: sum(rew) / n
         })
 
         self.writer.add_summary(summary_str, sample_times)
