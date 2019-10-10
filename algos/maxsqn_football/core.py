@@ -46,20 +46,24 @@ def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
     return x
 
 
-def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=True, coefficent_regularizer=0.0):
-    for h in hidden_sizes[:-1]:
-        x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
-    return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
-
-
-
-# Vanilla MLP
-# def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=True, coefficent_regularizer=0.0):
-#     for h in hidden_sizes[:-1]:
-#         # x = tf.layers.dense(x, units=h, activation=activation)
-#         x = tf.layers.dense(x, units=h, activation=activation, kernel_initializer=tf.variance_scaling_initializer(2.0))#, activity_regularizer=None)
-#     return tf.layers.dense(x, units=hidden_sizes[-1], activation=output_activation, kernel_initializer=tf.variance_scaling_initializer(2.0))#, activity_regularizer=None)
-
+def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=False, phase=True, coefficent_regularizer=0.0):
+    # MLP with batch normalization
+    if use_bn:
+        for h in hidden_sizes[:-1]:
+            x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
+        return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
+    # Vanilla MLP
+    else:
+        for h in hidden_sizes[:-1]:
+            # x = tf.layers.dense(x, units=h, activation=activation)
+            x = tf.layers.dense(x, units=h, activation=activation,
+                                kernel_regularizer=regularizer_l2(coefficent_regularizer),
+                                bias_regularizer=regularizer_l2(coefficent_regularizer),
+                                kernel_initializer=initializer_kernel)
+        return tf.layers.dense(x, units=hidden_sizes[-1], activation=output_activation,
+                               kernel_regularizer=regularizer_l2(coefficent_regularizer),
+                               bias_regularizer=regularizer_l2(coefficent_regularizer),
+                               kernel_initializer=initializer_kernel)
 
 
 def get_vars(scope):
@@ -100,7 +104,7 @@ Actor-Critics
 
 def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
                      output_activation=None,
-                     phase=True, coefficent_regularizer=0.0,
+                     use_bn=False, phase=True, coefficent_regularizer=0.0,
                      policy=softmax_policy, action_space=None):
 
     if x.shape[1] == 128:                # for Breakout-ram-v4
@@ -109,7 +113,7 @@ def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
     act_dim = action_space.n
     a_one_hot = tf.one_hot(a, depth=act_dim)      # shape(?,4)
     #vfs
-    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)     # return: shape(?,4)
+    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, use_bn=use_bn, phase=phase, coefficent_regularizer=coefficent_regularizer)     # return: shape(?,4)
 
 
     ################# Q1
