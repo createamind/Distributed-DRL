@@ -46,7 +46,7 @@ def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
     return x
 
 
-def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=True, coefficent_regularizer=0.01):
+def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=True, coefficent_regularizer=0.0):
     for h in hidden_sizes[:-1]:
         x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
     return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
@@ -54,7 +54,7 @@ def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=Tr
 
 
 # Vanilla MLP
-# def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=True, coefficent_regularizer=0.01):
+# def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, phase=True, coefficent_regularizer=0.0):
 #     for h in hidden_sizes[:-1]:
 #         # x = tf.layers.dense(x, units=h, activation=activation)
 #         x = tf.layers.dense(x, units=h, activation=activation, kernel_initializer=tf.variance_scaling_initializer(2.0))#, activity_regularizer=None)
@@ -100,7 +100,7 @@ Actor-Critics
 
 def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
                      output_activation=None,
-                     phase=True, coefficent_regularizer=0.01,
+                     phase=True, coefficent_regularizer=0.0,
                      policy=softmax_policy, action_space=None):
 
     if x.shape[1] == 128:                # for Breakout-ram-v4
