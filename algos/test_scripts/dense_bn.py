@@ -24,7 +24,7 @@ def dense_batch_relu(x, phase, scope):
         h1 = tf.layers.dense(x, 100, activation=None, kernel_regularizer=regularizer_l2, bias_regularizer=regularizer_l2,)
         h2 = tf.contrib.layers.batch_norm(h1,
                                           center=True, scale=True,
-                                          is_training=phase,
+                                          is_training=phase, fused=False,
                                           scope='bn')
         return tf.nn.relu(h2, 'relu')
 

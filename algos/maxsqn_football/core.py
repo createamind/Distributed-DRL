@@ -40,7 +40,7 @@ def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
                          kernel_initializer=initializer_kernel)
     x = tf.contrib.layers.batch_norm(x,
                                       center=True, scale=True,
-                                      is_training=phase)
+                                      is_training=phase, fused=False)
     if activation:
         x = activation(x)
     return x
