@@ -89,7 +89,7 @@ class ParameterServer(object):
 
         if is_restore:
             try:
-                pickle_in = open("weights.pickle", "rb")
+                pickle_in = open("restore_weights.pickle", "rb")
                 self.weights = pickle.load(pickle_in)
                 print("****** weights restored! ******")
             except:
@@ -383,7 +383,7 @@ if __name__ == '__main__':
     # ------ end ------
 
     # Create a parameter server with some random weights.
-    if opt.is_restore == "True":
+    if opt.is_restore:
         ps = ParameterServer.remote([], [], is_restore=True)
     else:
         net = Learner(opt, job="main")
