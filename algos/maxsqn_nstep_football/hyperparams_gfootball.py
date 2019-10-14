@@ -71,7 +71,7 @@ class HyperParameters:
 
         self.steps_per_epoch = 5000
         self.batch_size = 256
-        self.start_steps = int(300)
+        self.start_steps = int(3e4)
         self.max_ep_len = 960
         self.save_freq = 1
 

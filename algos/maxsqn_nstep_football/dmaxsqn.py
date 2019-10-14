@@ -375,5 +375,6 @@ if __name__ == '__main__':
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
-    task_test = worker_test.remote(ps, replay_buffer, opt)
-    ray.wait([task_test, ])
+    while True:
+        task_test = worker_test.remote(ps, replay_buffer, opt)
+        ray.wait([task_test, ])

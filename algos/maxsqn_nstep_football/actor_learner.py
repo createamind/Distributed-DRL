@@ -281,7 +281,7 @@ class Actor(object):
             rew.append(ep_ret)
             print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
-        sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
+        sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={
             self.test_vars[0]: sum(rew)/n,
             self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1)
