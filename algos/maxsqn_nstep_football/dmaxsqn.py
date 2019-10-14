@@ -2,8 +2,6 @@ import numpy as np
 import tensorflow as tf
 import time
 import ray
-import gym
-from gym.spaces import Box, Discrete
 
 from hyperparams_gfootball import HyperParameters, FootballWrapper
 from actor_learner import Actor, Learner
@@ -12,14 +10,13 @@ import os
 import pickle
 import multiprocessing
 import copy
-import signal
-import datetime
+
 from collections import deque
 
 import inspect
 import json
 
-import gfootball
+
 import gfootball.env as football_env
 
 flags = tf.app.flags
@@ -28,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
 flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -82,14 +79,14 @@ class ParameterServer(object):
 
         if weights_file:
             try:
-                # TODO close file
-                pickle_in = open(weights_file, "rb")
-                self.weights = pickle.load(pickle_in)
-                print("****** weights restored! ******")
+                with open(weights_file, "rb") as pickle_in:
+                    self.weights = pickle.load(pickle_in)
+                    print("****** weights restored! ******")
             except:
                 print("------------------------------------------------")
                 print(weights_file)
                 print("------ error: weights file doesn't exist! ------")
+                exit()
         else:
             values = [value.copy() for value in values]
             self.weights = dict(zip(keys, values))
@@ -157,6 +154,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     # TODO
     def cleanup():
         cache.end()
+        print("***********************multiprocessing terminated!***********************")
 
     import atexit
     atexit.register(cleanup)
@@ -370,7 +368,7 @@ if __name__ == '__main__':
     _, steps, _ = ray.get(replay_buffer.get_counts.remote())
     while steps < opt.start_steps:
         _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-        print('start_steps:', steps)
+        print('start steps:', steps)
         time.sleep(1)
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]

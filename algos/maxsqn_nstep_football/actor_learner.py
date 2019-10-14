@@ -5,12 +5,8 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from numbers import Number
-import gym
-
-import gfootball.env as football_env
 
 import datetime
-import time
 import ray
 import ray.experimental.tf_utils
 
