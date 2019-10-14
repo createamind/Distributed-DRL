@@ -2,13 +2,8 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 
-from baselines.a2c.utils import fc, conv, conv_to_fc
-
 EPS = 1e-8
 
-
-# def placeholder(dim=None):
-#     return tf.placeholder(dtype=tf.float32, shape=(None,dim) if dim else (None,))
 
 def placeholder(dim=None):
     if dim is None:
@@ -16,7 +11,7 @@ def placeholder(dim=None):
     elif len(dim)==0:
         return tf.placeholder(dtype=tf.int32, shape=((None,) + dim))       # for Discrete
     else:
-        return tf.placeholder(dtype=tf.float32, shape=((None,) + dim)) # for Box
+        return tf.placeholder(dtype=tf.float32, shape=((None,) + dim))     # for Box
 
 
 def placeholders(*args):
@@ -37,27 +32,42 @@ def placeholders_from_space(*args):
     return [placeholder_from_space(dim) for dim in args]
 
 
-def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None):
-    for h in hidden_sizes[:-1]:
-        # x = tf.layers.dense(x, units=h, activation=activation)
-        x = tf.layers.dense(x, units=h, activation=activation, kernel_initializer=tf.variance_scaling_initializer(2.0))#, activity_regularizer=None)
-    return tf.layers.dense(x, units=hidden_sizes[-1], activation=output_activation, kernel_initializer=tf.variance_scaling_initializer(2.0))#, activity_regularizer=None)
+initializer_kernel = tf.variance_scaling_initializer(2.0)
+# Parameter Regularization
+regularizer_l2 = tf.contrib.layers.l2_regularizer
 
 
-def nature_cnn(unscaled_images,  **conv_kwargs):
-    """
-    CNN from Nature paper.
-    """
-    # hidden_sizes = (32,),
-    scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
-    activ = tf.nn.relu
-    h = activ(conv(scaled_images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2),
-                   **conv_kwargs))
-    h2 = activ(conv(h, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
-    h3 = activ(conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
-    h3 = conv_to_fc(h3)
-    h4 = activ(fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2)))
-    return fc(h4, 'fc2', nh=21)
+# Batch Normalization
+def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
+    x = tf.layers.dense(inputs, units, activation=activation,
+                         kernel_regularizer=regularizer_l2(coefficent_regularizer), bias_regularizer=regularizer_l2(coefficent_regularizer),
+                         kernel_initializer=initializer_kernel)
+    x = tf.contrib.layers.batch_norm(x,
+                                      center=True, scale=True,
+                                      is_training=phase, fused=False)
+    if activation:
+        x = activation(x)
+    return x
+
+
+def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=False, phase=True, coefficent_regularizer=0.0):
+    # MLP with batch normalization
+    if use_bn:
+        for h in hidden_sizes[:-1]:
+            x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
+        return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
+    # Vanilla MLP
+    else:
+        for h in hidden_sizes[:-1]:
+            # x = tf.layers.dense(x, units=h, activation=activation)
+            x = tf.layers.dense(x, units=h, activation=activation,
+                                kernel_regularizer=regularizer_l2(coefficent_regularizer),
+                                bias_regularizer=regularizer_l2(coefficent_regularizer),
+                                kernel_initializer=initializer_kernel)
+        return tf.layers.dense(x, units=hidden_sizes[-1], activation=output_activation,
+                               kernel_regularizer=regularizer_l2(coefficent_regularizer),
+                               bias_regularizer=regularizer_l2(coefficent_regularizer),
+                               kernel_initializer=initializer_kernel)
 
 
 def get_vars(scope):
@@ -97,22 +107,23 @@ Actor-Critics
 
 
 def actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
-                     output_activation=None, policy=softmax_policy, action_space=None, model="mlp"):
+                 output_activation=None,
+                 use_bn=False, phase=True, coefficent_regularizer=0.0,
+                 policy=softmax_policy, action_space=None):
 
     if x.shape[1] == 128:                # for Breakout-ram-v4
         x = (x - 128.0) / 128.0          # x: shape(?,128)
 
     act_dim = action_space.n
     a_one_hot = tf.one_hot(a, depth=act_dim)      # shape(?,4)
-    #vfs TODO might not good
-    if model == "mlp":
-        vf_model = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, None)     # return: shape(?,4)
-    else:
-        vf_model = lambda x: nature_cnn(x)
+    #vfs
+    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, use_bn=use_bn, phase=phase, coefficent_regularizer=coefficent_regularizer)     # return: shape(?,4)
 
     # Q1
 
-    q1_tp = tf.make_template('q1', vf_model, create_scope_now_=True)
+    ################# Q1
+
+    q1_tp = tf.make_template('q1', vf_mlp, create_scope_now_=True)
 
     v1_x = q1_tp(x)
 
@@ -134,7 +145,9 @@ def actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
 
     # Q2
 
-    q2_tp = tf.make_template('q2', vf_model, create_scope_now_=True)
+    ################# Q2
+
+    q2_tp = tf.make_template('q2', vf_mlp, create_scope_now_=True)
 
     v2_x = q2_tp(x)
 

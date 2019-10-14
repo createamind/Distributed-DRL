@@ -8,10 +8,10 @@ from numbers import Number
 
 
 class HyperParameters:
-    def __init__(self, env_name, exp_name, total_epochs, num_workers, a_l_ratio, weights_file):
+    def __init__(self, env_name, exp_name, num_workers, a_l_ratio, weights_file):
         # parameters set
 
-        self.env_name = "11_vs_11_easy_stochastic"
+        self.env_name = env_name
 
         # "_random", "_d_True", ""
         self.rollout_env_name = self.env_name + ""
@@ -21,7 +21,6 @@ class HyperParameters:
 
         self.representation = 'simple115'
         self.stacked = False
-        self.model = "mlp"
 
         self.a_l_ratio = a_l_ratio
         self.weights_file = weights_file
@@ -29,8 +28,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.2
 
-        # self.ac_kwargs = dict(hidden_sizes=[400, 600, 400, 200])
-        self.ac_kwargs = dict(hidden_sizes=[600, 400, 200])
+        self.hidden_size = (600, 400, 300)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
@@ -38,23 +36,12 @@ class HyperParameters:
         # env = FootballWrapper(env_football)
         env = env_football
 
-        # self.obs_dim = env.observation_space.shape
-        #
-        # # self.obs_dim = 51
-        # self.obs_space = env.observation_space
-        # # self.obs_space = Box(low=-1.0, high=1.0, shape=(self.obs_dim,), dtype=np.float32)
-        # # TODO gfootball 1.3
-        # if len(self.obs_dim) == 1 and self.env_name == "academy_3_vs_1_with_keeper":
-        #     # self.obs_dim = (self.obs_dim,)
-        #     self.obs_dim = (51, )
-        #     self.obs_space = Box(low=-1.0, high=1.0, shape=(51,), dtype=np.float32)
-        #
-        # self.act_dim = env.action_space.n
-        # self.act_space = env.action_space
-
-        scenario_obsdim = {'11_vs_11_easy_stochastic': 115, 'academy_empty_goal': 32, 'academy_empty_goal_random': 32,
+        scenario_obsdim = {'11_vs_11_easy_stochastic': 115,
+                           'academy_empty_goal': 32,
+                           'academy_empty_goal_random': 32,
                            'academy_3_vs_1_with_keeper': 51,
-                           'academy_3_vs_1_with_keeper_random': 51, 'academy_single_goal_versus_lazy': 108}
+                           'academy_3_vs_1_with_keeper_random': 51,
+                           'academy_single_goal_versus_lazy': 108}
         self.obs_dim = scenario_obsdim[self.env_name]
         self.obs_space = Box(low=-1.0, high=1.0, shape=(self.obs_dim,), dtype=np.float32)
 
@@ -62,20 +49,19 @@ class HyperParameters:
 
         self.act_dim = env.action_space.n
         self.act_space = env.action_space
-
         self.a_shape = self.act_space.shape
 
-        # Share information about action space with policy architecture
-        self.ac_kwargs['action_space'] = env.action_space
-
-        self.total_epochs = total_epochs
         self.num_workers = num_workers
+        self.num_learners = 1
 
         self.Ln = 3
         self.use_max = False
         self.alpha = 0.1
         # self.alpha = "auto"
         self.target_entropy = 0.5
+
+        self.use_bn = False
+        self.c_regularizer = 0.0
 
         self.gamma = 0.997
         self.replay_size = int(3e6)
@@ -85,7 +71,7 @@ class HyperParameters:
 
         self.steps_per_epoch = 5000
         self.batch_size = 256
-        self.start_steps = int(3e4)
+        self.start_steps = int(300)
         self.max_ep_len = 960
         self.save_freq = 1
 

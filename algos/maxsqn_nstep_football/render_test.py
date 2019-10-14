@@ -56,7 +56,7 @@ opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.total_epochs, FLAGS.
 
 agent = Actor(opt, job="test")
 keys, weights = agent.get_weights()
-pickle_in = open("./Weights/43_8M.pickle", "rb")
+pickle_in = open("./Weights/nnM.pickle", "rb")
 weights_all = pickle.load(pickle_in)
 
 

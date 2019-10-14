@@ -42,15 +42,17 @@ class Learner(object):
             with tf.variable_scope('main'):
                 mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
                     = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   hidden_sizes=opt.ac_kwargs['hidden_sizes'],
-                                   action_space=opt.ac_kwargs['action_space'], model=opt.model)
+                                   use_bn=opt.use_bn, phase=True, coefficent_regularizer=opt.c_regularizer,
+                                   hidden_sizes=opt.hidden_size,
+                                   action_space=opt.act_space)
 
             # Target value network
             with tf.variable_scope('target'):
-                _, _, logp_pi_, _,  _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ = \
-                    actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
-                                 hidden_sizes=opt.ac_kwargs['hidden_sizes'],
-                                 action_space=opt.ac_kwargs['action_space'], model=opt.model)
+                _, _, logp_pi_, _,  _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ \
+                    = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
+                                   use_bn=opt.use_bn, phase=True, coefficent_regularizer=opt.c_regularizer,
+                                   hidden_sizes=opt.hidden_size,
+                                   action_space=opt.act_space)
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -71,6 +73,7 @@ class Learner(object):
             else:
                 min_q_pi = tf.minimum(q1_pi_, q2_pi_)  # x2
 
+            # get rid of abnormal explosion
             min_q_pi = tf.clip_by_value(min_q_pi, -300.0, 900.0)
 
 
@@ -89,7 +92,9 @@ class Learner(object):
             value_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr)
             value_params = get_vars('main/q')
 
-            train_value_op = value_optimizer.minimize(self.value_loss, var_list=value_params)
+            bn_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(bn_update_ops):
+                train_value_op = value_optimizer.minimize(self.value_loss, var_list=value_params)
 
             # Polyak averaging for target variables
             # (control flow because sess.run otherwise evaluates in nondeterministic order)
@@ -101,11 +106,9 @@ class Learner(object):
             if isinstance(alpha_v, Number):
                 self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(alpha_v),
                                  train_value_op, target_update]
-                self.step_ops_notraining = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(alpha_v)]
             else:
                 self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, alpha_v,
                                  train_value_op, target_update, train_alpha_op]
-                self.step_ops_notraining = [q1_loss, q2_loss, q1, q2, logp_pi_, alpha_v]
 
             # Initializing targets to match main variables
             self.target_init = tf.group([tf.assign(v_targ, v_main)
@@ -227,8 +230,9 @@ class Actor(object):
             with tf.variable_scope('main'):
                 self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
                     = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   hidden_sizes=opt.ac_kwargs['hidden_sizes'],
-                                   action_space=opt.ac_kwargs['action_space'], model=opt.model)
+                                   hidden_sizes=opt.hidden_size,
+                                   action_space=opt.act_space,
+                                   phase=False, use_bn=opt.use_bn, coefficent_regularizer=opt.c_regularizer)
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -246,8 +250,11 @@ class Actor(object):
                     opt.summary_dir + "/" + str(datetime.datetime.now()) + "-" + opt.env_name + "-" + opt.exp_name +
                     "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
 
+            variables_all = tf.contrib.framework.get_variables_to_restore()
+            variables_bn = [v for v in variables_all if 'moving_mean' in v.name or 'moving_variance' in v.name]
+
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
-                self.pi, self.sess)
+                self.pi, self.sess, input_variables=variables_bn)
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
@@ -258,17 +265,17 @@ class Actor(object):
         values = [weights[key] for key in keys]
         return keys, values
 
-    def get_action(self, o, deterministic=False):
+    def get_action(self, o, deterministic):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
 
-    def test(self, test_env, replay_buffer, n=25):
+    def test(self, test_env, replay_buffer, n=50):
         rew = []
         for j in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
             while not d:
                 # Take deterministic actions at test time
-                o, r, d, _ = test_env.step(self.get_action(o, True))
+                o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
                 ep_ret += r
                 ep_len += 1
             rew.append(ep_ret)
