@@ -102,9 +102,13 @@ class Learner(object):
             if isinstance(alpha_v, Number):
                 self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(alpha_v),
                                  train_value_op, target_update]
+                self.value_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(alpha_v),
+                                 train_value_op]
             else:
                 self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, alpha_v,
                                  train_value_op, target_update, train_alpha_op]
+                self.value_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, alpha_v,
+                                 train_value_op, target_update]
 
             # Initializing targets to match main variables
             self.target_init = tf.group([tf.assign(v_targ, v_main)
@@ -161,7 +165,11 @@ class Learner(object):
                      self.r_ph: batch['rews'],
                      self.d_ph: batch['done'],
                      }
-        outs = self.sess.run(self.step_ops, feed_dict)
+        # TODO train without target_update
+        if self.opt.weights_file and cnt < self.opt.start_steps:
+            outs = self.sess.run(self.value_ops, feed_dict)
+        else:
+            outs = self.sess.run(self.step_ops, feed_dict)
         if cnt % 300 == 0:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
