@@ -364,18 +364,16 @@ if __name__ == '__main__':
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
-    if FLAGS.weights_file:
-        opt.start_steps = int(1e6)
-
-    if not opt.weights_file:
-        # store at least start_steps in buffer before training
-        _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-        while steps < opt.start_steps:
-            _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-            print('start steps:', steps)
-            time.sleep(1)
+    if opt.weights_file:
+        start_steps = 1e5
     else:
-        time.sleep(15)
+        start_steps = 3e4
+    # store at least start_steps in buffer before training
+    _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+    while steps < start_steps:
+        _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+        print('start steps before learn:', steps)
+        time.sleep(1)
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
