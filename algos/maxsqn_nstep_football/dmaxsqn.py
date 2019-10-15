@@ -249,9 +249,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 time.sleep(0.1)
 
             print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
-            # update parameters every episode
-            weights = ray.get(ps.pull.remote(keys))
-            agent.set_weights(keys, weights)
+
+            if steps > opt.start_steps:
+                # update parameters every episode
+                weights = ray.get(ps.pull.remote(keys))
+                agent.set_weights(keys, weights)
 
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
@@ -365,12 +367,15 @@ if __name__ == '__main__':
     if FLAGS.weights_file:
         opt.start_steps = int(1e6)
 
-    # store at least start_steps in buffer before training
-    _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-    while steps < opt.start_steps:
+    if not opt.weights_file:
+        # store at least start_steps in buffer before training
         _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-        print('start steps:', steps)
-        time.sleep(1)
+        while steps < opt.start_steps:
+            _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+            print('start steps:', steps)
+            time.sleep(1)
+    else:
+        time.sleep(15)
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
