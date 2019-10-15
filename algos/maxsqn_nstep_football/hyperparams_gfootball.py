@@ -31,7 +31,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.2
 
-        self.hidden_size = (600, 400, 200)
+        self.hidden_size = (600, 400, 300)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
