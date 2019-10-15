@@ -118,6 +118,7 @@ class Cache(object):
         self.q1 = multiprocessing.Queue(10)
         self.q2 = multiprocessing.Queue(5)
         self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
+        self.p1.daemon = True
 
     def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
@@ -152,12 +153,12 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     cache.start()
 
     # TODO
-    def cleanup():
-        cache.end()
-        print("***********************multiprocessing terminated!***********************")
-
-    import atexit
-    atexit.register(cleanup)
+    # def cleanup():
+    #     cache.end()
+    #     print("***********************multiprocessing terminated!***********************")
+    #
+    # import atexit
+    # atexit.register(cleanup)
 
     cnt = 1
     while True:
