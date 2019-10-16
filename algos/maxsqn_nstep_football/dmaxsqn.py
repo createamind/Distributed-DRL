@@ -365,7 +365,7 @@ if __name__ == '__main__':
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if opt.weights_file:
-        start_steps = 1e5
+        start_steps = opt.start_steps / 10
     else:
         start_steps = 3e4
     # store at least start_steps in buffer before training

@@ -26,7 +26,7 @@ class HyperParameters:
         self.weights_file = weights_file
         self.start_steps = int(3e4)
         if self.weights_file:
-            self.start_steps = int(1e6)
+            self.start_steps = int(5e5)
 
         # gpu memory fraction
         self.gpu_fraction = 0.2
