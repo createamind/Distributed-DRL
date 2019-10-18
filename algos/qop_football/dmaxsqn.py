@@ -125,8 +125,8 @@ class Cache(object):
         # cache for training data and model weights
         print('os.pid:', os.getpid())
         self.replay_buffer = replay_buffer
-        self.q1 = multiprocessing.Queue(10)
-        self.q2 = multiprocessing.Queue(5)
+        self.q1 = multiprocessing.Queue(5)
+        self.q2 = multiprocessing.Queue(3)
         self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
 
     def ps_update(self, q1, q2, replay_buffer):
@@ -173,7 +173,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     while True:
         batch = cache.q1.get()
         agent.train(batch, cnt)
-        if cnt % 300 == 0:
+        if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
         cnt += 1
 

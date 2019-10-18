@@ -12,7 +12,7 @@ class HyperParameters:
 
         self.env_name = "11_vs_11_easy_stochastic"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = '11v11_easy_33_200_done_buffer3e4'
+        self.exp_name = '11v11_easy_33_150_done_buffer3e4_bs256'
 
         self.env_random = False
         self.deterministic = False
@@ -85,7 +85,7 @@ class HyperParameters:
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
-        self.batch_size = 300
+        self.batch_size = 256
 
         if self.is_restore:
             self.start_steps = int(1e6)
@@ -123,37 +123,27 @@ class FootballWrapper(object):
         r = 0.0
         for _ in range(3):
             obs, reward, done, info = self._env.step(action)
-            # if reward != 0.0:
-            #     done = True
-            # else:
-            #     done = False
 
             if reward < 0.0:
                 done = True
                 reward = 0.0
 
-
-            # if reward < 0.0:
-            #     reward = 0.0
-            # reward -= 0.00175
-
-            # if obs[0] < 0.0:
-            #     done = True
-
-            # if not done:  # when env is done, ball position will be reset.
-            #     reward += self.incentive(obs)
+            # # incentive
+            # incentive = self.incentive(obs)
+            # if (not done) and reward != 1.0:  # when env is done, ball position will be reset.
+            #     reward += incentive
 
             r += reward
 
             if done:
-                return obs, r * 200, done, info
+                return obs, r * 150, done, info
 
-        return obs, r * 200, done, info
+        return obs, r * 150, done, info
 
     def incentive(self, obs):
         # total accumulative incentive reward is around 0.5
         dis_to_goal_new = np.linalg.norm(obs[0:2] - [1.01, 0.0])
-        r = 0.25 * (self.dis_to_goal - dis_to_goal_new)
+        r = 0.5 * (self.dis_to_goal - dis_to_goal_new)
         self.dis_to_goal = dis_to_goal_new
         return r
 
