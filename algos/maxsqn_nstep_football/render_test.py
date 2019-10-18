@@ -16,7 +16,7 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
-flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
+flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 6, "number of workers")
@@ -51,12 +51,14 @@ class FootballWrapper(object):
 
         return obs, r, done, info
 
-opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.total_epochs, FLAGS.num_workers, FLAGS.a_l_ratio,
+
+opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.num_workers, FLAGS.a_l_ratio,
                       FLAGS.weights_file)
+opt.hidden_size = (600, 400, 200)
 
 agent = Actor(opt, job="test")
 keys, weights = agent.get_weights()
-pickle_in = open("./Weights/nnM.pickle", "rb")
+pickle_in = open("./weights.pickle", "rb")
 weights_all = pickle.load(pickle_in)
 
 
@@ -65,8 +67,8 @@ weights = [weights_all[key] for key in keys]
 agent.set_weights(keys, weights)
 
 test_env = football_env.create_environment(env_name="11_vs_11_easy_stochastic",
-                                           representation='simple115', render=False)
-test_env = FootballWrapper(test_env)
+                                           representation='simple115', render=True)
+# test_env = FootballWrapper(test_env)
 n = 100
 
 rew = []
