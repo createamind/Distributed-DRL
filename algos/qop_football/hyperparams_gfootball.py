@@ -12,9 +12,9 @@ class HyperParameters:
 
         self.env_name = "11_vs_11_easy_stochastic"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = 'debug_11v11_easy_86_33_200_done_random'
+        self.exp_name = '11v11_easy_33_200_done'
 
-        self.env_random = True
+        self.env_random = False
         self.deterministic = False
 
         if self.env_random:
@@ -30,7 +30,7 @@ class HyperParameters:
         self.gpu_fraction = 0.2
 
         # self.ac_kwargs = dict(hidden_sizes=[600, 800, 600, 400, 300])
-        self.hidden_size = (800, 600)
+        self.hidden_size = (400, 300)
         # self.hidden_size = (400, 300)
 
         env_football = football_env.create_environment(env_name=self.env_name, representation='simple115', render=False)
@@ -65,8 +65,8 @@ class HyperParameters:
         self.total_epochs = 200000
 
         self.num_learners = 1
-        self.num_workers = 1
-        self.a_l_ratio = 0.7
+        self.num_workers = 10
+        self.a_l_ratio = 1.0
 
         self.num_steps = 128
         self.Ln = 3
@@ -77,11 +77,11 @@ class HyperParameters:
 
 
         self.gamma = 0.997
-        self.replay_size = int(2e6)
+        self.replay_size = int(self.num_workers*self.num_steps)
 
         self.use_bn = False
         self.c_regularizer = 0.0
-        self.lr = 4e-5
+        self.lr = 5e-5
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
@@ -90,7 +90,7 @@ class HyperParameters:
         if self.is_restore:
             self.start_steps = int(1e6)
         else:
-            self.start_steps = int(3e2)
+            self.start_steps = self.replay_size
 
         self.start_steps_per_worker = int(self.start_steps/self.num_workers)
         self.max_ep_len = 1000
