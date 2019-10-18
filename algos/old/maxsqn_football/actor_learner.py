@@ -5,14 +5,18 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from numbers import Number
+import gym
+
+import gfootball.env as football_env
 
 import datetime
+import time
 import ray
 import ray.experimental.tf_utils
 
 import core
 from core import get_vars
-from core import actor_critic
+from core import mlp_actor_critic as actor_critic
 
 
 class Learner(object):
@@ -23,10 +27,11 @@ class Learner(object):
             np.random.seed(opt.seed)
 
             # Inputs to computation graph
-            self.x_ph, self.a_ph, self.x2_ph = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
+            self.x_ph, self.a_ph, self.x2_ph, = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
             self.r_ph, self.d_ph, self.logp_pi_ph = core.placeholders((opt.Ln,), (opt.Ln,), (opt.Ln,))
 
             # ------
+            # TODO BUG: TypeError: can't pickle _thread.RLock objects
             if opt.alpha == 'auto':
                 log_alpha = tf.get_variable('log_alpha', dtype=tf.float32, initializer=0.0)
                 alpha_v = tf.exp(log_alpha)
@@ -34,23 +39,20 @@ class Learner(object):
                 alpha_v = opt.alpha
             # ------
 
+
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   use_bn=opt.use_bn, phase=True, coefficent_regularizer=opt.c_regularizer,
-                                   hidden_sizes=opt.hidden_size,
-                                   action_space=opt.act_space,
-                                   model=opt.model)
+                mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                                                                                                  action_space=opt.act_space,
+                                                                                                  use_bn=opt.use_bn, phase=True,
+                                                                                                  coefficent_regularizer=opt.c_regularizer)
 
             # Target value network
             with tf.variable_scope('target'):
-                _, _, logp_pi_, _,  _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ \
-                    = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   use_bn=opt.use_bn, phase=True, coefficent_regularizer=opt.c_regularizer,
-                                   hidden_sizes=opt.hidden_size,
-                                   action_space=opt.act_space,
-                                   model=opt.model)
+                _, _, logp_pi_, _, _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                                                                                       action_space=opt.act_space,
+                                                                                       use_bn=opt.use_bn, phase=True,
+                                                                                       coefficent_regularizer=opt.c_regularizer)
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -58,7 +60,7 @@ class Learner(object):
             print(('\nNumber of parameters: \t pi: %d, \t' + 'q1: %d, \t q2: %d, \t total: %d\n') % var_counts)
 
             # ------
-            if isinstance(alpha_v, tf.Tensor):
+            if opt.alpha == 'auto':
                 alpha_loss = tf.reduce_mean(-log_alpha * tf.stop_gradient(logp_pi_ + opt.target_entropy))
 
                 alpha_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr, name='alpha_optimizer')
@@ -72,15 +74,15 @@ class Learner(object):
                 min_q_pi = tf.minimum(q1_pi_, q2_pi_)  # x2
 
             # get rid of abnormal explosion
-            min_q_pi = tf.clip_by_value(min_q_pi, -300.0, 900.0)
+            min_q_pi = tf.clip_by_value(min_q_pi, -1000.0, 2000.0)
 
 
             #### n-step backup
             q_backup = tf.stop_gradient(min_q_pi)
             for step_i in reversed(range(opt.Ln)):
-                q_backup = self.r_ph[:, step_i] + \
-                           opt.gamma * (1 - self.d_ph[:, step_i]) * (-alpha_v * self.logp_pi_ph[:, step_i] + q_backup)
+                q_backup = self.r_ph[:, step_i] + opt.gamma * (1 - self.d_ph[:, step_i]) * (-alpha_v * self.logp_pi_ph[:, step_i] + q_backup)
             ####
+
 
             # Soft actor-critic losses
             q1_loss = 0.5 * tf.reduce_mean((q_backup - q1) ** 2)
@@ -130,12 +132,13 @@ class Learner(object):
             if job == "learner":
                 # Set up summary Ops
                 self.train_ops, self.train_vars = self.build_summaries()
-                self.writer = tf.summary.FileWriter(
-                    opt.summary_dir + "/" + "^^^^^^^^^^" + str(datetime.datetime.now()) + opt.env_name + "-" +
-                    opt.exp_name + "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
+                self.writer = tf.summary.FileWriter(opt.summary_dir+'-train', self.sess.graph)
+
+            variables_all = tf.contrib.framework.get_variables_to_restore()
+            variables_bn = [v for v in variables_all if 'moving_mean' in v.name or 'moving_variance' in v.name]
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
-                self.value_loss, self.sess)
+                self.value_loss, self.sess, input_variables=variables_bn)
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
@@ -163,9 +166,9 @@ class Learner(object):
                      self.r_ph: batch['rews'],
                      self.d_ph: batch['done'],
                      }
-
         outs = self.sess.run(self.step_ops, feed_dict)
-        if cnt % 300 == 0:
+
+        if cnt % 1000 == 1:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
@@ -227,12 +230,10 @@ class Actor(object):
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                self.mu, self.pi, logp_pi, logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu \
-                    = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,
-                                   hidden_sizes=opt.hidden_size,
-                                   action_space=opt.act_space,
-                                   phase=False, use_bn=opt.use_bn, coefficent_regularizer=opt.c_regularizer,
-                                   model=opt.model)
+                self.mu, self.pi, _, _, _, _, _, _, _, _, = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                                                                         action_space=opt.act_space,
+                                                                         use_bn=opt.use_bn, phase=False,
+                                                                         coefficent_regularizer=opt.c_regularizer)
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -246,9 +247,7 @@ class Actor(object):
             self.sess.run(tf.global_variables_initializer())
 
             if job == "main":
-                self.writer = tf.summary.FileWriter(
-                    opt.summary_dir + "/" + str(datetime.datetime.now()) + "-" + opt.env_name + "-" + opt.exp_name +
-                    "-workers_num:" + str(opt.num_workers) + "%" + str(opt.a_l_ratio), self.sess.graph)
+                self.writer = tf.summary.FileWriter(opt.summary_dir+'-test', self.sess.graph)
 
             variables_all = tf.contrib.framework.get_variables_to_restore()
             variables_bn = [v for v in variables_all if 'moving_mean' in v.name or 'moving_variance' in v.name]
@@ -273,7 +272,7 @@ class Actor(object):
         rew = []
         for j in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-            while not d:
+            while not d: #(d or (ep_len == self.opt.max_ep_len)):
                 # Take deterministic actions at test time
                 o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
                 ep_ret += r
@@ -281,10 +280,10 @@ class Actor(object):
             rew.append(ep_ret)
             print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
-        sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
+
+        sample_times, _, _, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={
-            self.test_vars[0]: sum(rew)/n,
-            self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1)
+            self.test_vars[0]: sum(rew) / n
         })
 
         self.writer.add_summary(summary_str, sample_times)
@@ -295,10 +294,9 @@ class Actor(object):
     def build_summaries(self):
         test_summaries = []
         episode_reward = tf.Variable(0.)
-        a_l_ratio = tf.Variable(0.)
         test_summaries.append(tf.summary.scalar("Reward", episode_reward))
-        test_summaries.append(tf.summary.scalar("a_l_ratio", a_l_ratio))
+
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward, a_l_ratio]
+        test_vars = [episode_reward]
 
         return test_ops, test_vars

@@ -54,11 +54,11 @@ class FootballWrapper(object):
 
 opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.num_workers, FLAGS.a_l_ratio,
                       FLAGS.weights_file)
-opt.hidden_size = (600, 400, 200)
+opt.hidden_size = (300, 400, 300)
 
 agent = Actor(opt, job="test")
 keys, weights = agent.get_weights()
-pickle_in = open("./weights.pickle", "rb")
+pickle_in = open("./weights/343M.pickle", "rb")
 weights_all = pickle.load(pickle_in)
 
 

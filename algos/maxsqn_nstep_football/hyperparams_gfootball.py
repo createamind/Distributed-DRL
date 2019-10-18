@@ -22,6 +22,11 @@ class HyperParameters:
         self.representation = 'simple115'
         self.stacked = False
 
+        self.model = "mlp"
+        assert self.model in ["mlp", "cnn"], "model must be mlp or cnn!"
+        if self.model == "cnn":
+            self.representation = "extracted"
+
         self.a_l_ratio = a_l_ratio
         self.weights_file = weights_file
         self.start_steps = int(3e4)
@@ -31,7 +36,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.2
 
-        self.hidden_size = (600, 400, 300)
+        self.hidden_size = (300, 400, 300)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
@@ -45,8 +50,9 @@ class HyperParameters:
                            'academy_3_vs_1_with_keeper': 51,
                            'academy_3_vs_1_with_keeper_random': 51,
                            'academy_single_goal_versus_lazy': 108}
-        self.obs_dim = scenario_obsdim[self.env_name]
-        self.obs_space = Box(low=-1.0, high=1.0, shape=(self.obs_dim,), dtype=np.float32)
+        # self.obs_dim = scenario_obsdim[self.env_name]
+        self.obs_dim = env.observation_space.shape
+        self.obs_space = Box(low=-1.0, high=1.0, shape=self.obs_dim, dtype=np.float32)
 
         self.o_shape = self.obs_space.shape
 
@@ -67,7 +73,7 @@ class HyperParameters:
         self.c_regularizer = 0.0
 
         self.gamma = 0.997
-        self.replay_size = int(3e6)
+        self.replay_size = int(1e3)
 
         self.lr = 5e-5
         self.polyak = 0.995
