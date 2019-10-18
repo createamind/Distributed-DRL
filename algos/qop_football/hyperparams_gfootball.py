@@ -12,7 +12,7 @@ class HyperParameters:
 
         self.env_name = "11_vs_11_easy_stochastic"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = '11v11_easy_33_200_done'
+        self.exp_name = '11v11_easy_33_200_done_buffer3e4'
 
         self.env_random = False
         self.deterministic = False
@@ -77,7 +77,7 @@ class HyperParameters:
 
 
         self.gamma = 0.997
-        self.replay_size = int(self.num_workers*self.num_steps)
+        self.replay_size = int(3e4)
 
         self.use_bn = False
         self.c_regularizer = 0.0
