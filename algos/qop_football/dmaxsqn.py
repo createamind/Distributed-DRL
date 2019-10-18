@@ -36,33 +36,32 @@ import gfootball.env as football_env
 @ray.remote
 class ReplayBuffer_N:
     """
-    A simple FIFO experience replay buffer for SQN_N_STEP agents.
+    A simple FIFO experience replay buffer for QOP_N_STEP agents.
     """
 
-    def __init__(self, Ln, obs_shape, act_shape, size):
-        self.buffer_o = np.zeros((size, Ln + 1)+obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((size, Ln)+act_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
-        self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
+    def __init__(self, obs_shape, act_shape, size):
+        self.buffer_o = np.zeros((size,)+obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((size,) + act_shape, dtype=np.float32)
+        self.buffer_q_backup = np.zeros((size,), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
         self.steps, self.sample_times = 0, 0
         self.worker_pool = set()
         print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
         print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
-    def store(self, o_queue, a_r_d_queue, worker_index):
-        obs, = np.stack(o_queue, axis=1)
-        self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
+    def store(self, mb_obs, mb_actions, mb_q_backup, len_mb, worker_index):
 
-        a, r, d, = np.stack(a_r_d_queue, axis=1)
-        self.buffer_a[self.ptr] = np.array(list(a), dtype=np.float32)
-        self.buffer_r[self.ptr] = np.array(list(r), dtype=np.float32)
-        self.buffer_d[self.ptr] = np.array(list(d), dtype=np.float32)
+        for i in range(len_mb):
 
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
+            self.buffer_o[self.ptr] = mb_obs[i]
+            self.buffer_a[self.ptr] = mb_actions[i]
+            self.buffer_q_backup[self.ptr] = mb_q_backup[i]
 
-        self.steps += 1
+            self.ptr = (self.ptr + 1) % self.max_size
+            self.size = min(self.size + 1, self.max_size)
+
+            self.steps += 1
+
         self.worker_pool.add(worker_index)
 
     def sample_batch(self, batch_size=128):
@@ -70,9 +69,7 @@ class ReplayBuffer_N:
         self.sample_times += 1
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
-                    rews=self.buffer_r[idxs],
-                    done=self.buffer_d[idxs],)
-
+                    q_backups=self.buffer_q_backup[idxs],)
 
     def get_counts(self):
         return self.sample_times, self.steps, self.size, len(self.worker_pool)
@@ -191,101 +188,100 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     env = football_env.create_environment(env_name=opt.rollout_env_name,
                                           representation='simple115', render=False)
     env = FootballWrapper(env)
+
     # ------ env set up end ------
 
     agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
 
-
-
-
-    ################################## deques
-
-    o_queue = deque([], maxlen=opt.Ln + 1)
-    a_r_d_queue = deque([], maxlen=opt.Ln)
-
-    ################################## deques
-
-    o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-
-
-    ################################## deques reset
-    t_queue = 1
-    o_queue.append((o,))
-
-    ################################## deques reset
-
-
-    # epochs = opt.total_epochs // opt.num_workers
-    total_steps = opt.steps_per_epoch * opt.total_epochs
-
     weights = ray.get(ps.pull.remote(keys))
     agent.set_weights(keys, weights)
 
+
     # for t in range(total_steps):
     t = 0
+    o, ep_ret, ep_len = env.reset(), 0, 0
+
     while True:
-        if t > opt.start_steps_per_worker or opt.is_restore:
-            a = agent.get_action(o, deterministic=False)
-        else:
-            a = env.action_space.sample()
-            t += 1
 
-        # Step the env
-        o2, r, d, _ = env.step(a)
+        mb_obs, mb_rewards, mb_actions, mb_dones = [], [], [], []
 
-        ep_ret += r
-        ep_len += 1
+        for _ in range(opt.num_steps):
 
-        # Ignore the "done" signal if it comes from hitting the time
-        # horizon (that is, when it's an artificial terminal signal
-        # that isn't based on the agent's state)
-        d = False if ep_len == opt.max_ep_len else d
+            mb_obs.append(o)
 
-        # Super critical, easy to overlook step: make sure to update
-        # most recent observation!
-        o = o2
+            if t > opt.start_steps_per_worker or opt.is_restore:
+                a = agent.get_action(o, deterministic=False)
+            else:
+                a = env.action_space.sample()
+                t += 1
 
-        #################################### deques store
+            # Step the env
+            o2, r, d, _ = env.step(a)
 
-        a_r_d_queue.append( (a, r, d,) )
-        o_queue.append((o2,))
+            ep_ret += r
+            ep_len += 1
 
-        if t_queue % opt.Ln == 0:
-            replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+            h = agent.get_entropy(o)
+            r += h
 
-        if d and t_queue % opt.Ln != 0:
-            for _0 in range(opt.Ln - t_queue % opt.Ln):
-                a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
-                o_queue.append((np.zeros((opt.obs_dim,), dtype=np.float32), ))
-            replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+            # Ignore the "done" signal if it comes from hitting the time
+            # horizon (that is, when it's an artificial terminal signal
+            # that isn't based on the agent's state)
+            d = False if ep_len == opt.max_ep_len else d
 
-        t_queue += 1
+            mb_actions.append(a)
+            mb_rewards.append(r)
+            mb_dones.append(d)
 
-        #################################### deques store
+            if d:
+                print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
+                o2, ep_ret, ep_len = env.reset(), 0, 0
+
+            # Super critical, easy to overlook step: make sure to update
+            # most recent observation!
+            o = o2
+
+            if ep_len == opt.max_ep_len:
+                print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
+                o, ep_ret, ep_len = env.reset(), 0, 0
+                break
 
 
-        # End of episode. Training (ep_len times).
-        if d or (ep_len == opt.max_ep_len):
+        mb_actions = np.asarray(mb_actions)
+        mb_obs = np.asarray(mb_obs)
+        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
+        mb_dones = np.asarray(mb_dones, dtype=np.bool)
 
+        value = agent.get_value(o2)
+
+        mb_q_backup = np.zeros_like(mb_rewards)
+
+        len_mb = len(mb_rewards)
+
+        q_backup = value
+
+        # n-step backup
+        for step_i in reversed(range(len_mb)):
+            q_backup = mb_rewards[step_i] + opt.gamma * (1 - mb_dones[step_i]) * q_backup
+            mb_q_backup[step_i] = q_backup
+
+
+        # restore data for training
+        replay_buffer.store.remote(mb_obs, mb_actions, mb_q_backup, len_mb, worker_index)
+
+        # keep the a_l_ratio
+        sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
+
+        while sample_times > 0 and (steps-opt.start_steps) / sample_times > opt.a_l_ratio:
             sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
+            time.sleep(0.1)
 
-            while sample_times > 0 and (steps-opt.start_steps) / sample_times > opt.a_l_ratio:
-                sample_times, steps, _, _ = ray.get(replay_buffer.get_counts.remote())
-                time.sleep(0.1)
+        # pull new parameters from ps
+        weights = ray.get(ps.pull.remote(keys))
+        agent.set_weights(keys, weights)
 
-            print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
-            # update parameters every episode
-            weights = ray.get(ps.pull.remote(keys))
-            agent.set_weights(keys, weights)
 
-            o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-
-            ################################## deques reset
-            t_queue = 1
-            o_queue.append((o,))
-
-            ################################## deques reset
 
 
 @ray.remote
@@ -317,7 +313,7 @@ def worker_test(ps, replay_buffer, opt):
 
         # In case the env crushed
 
-        ep_ret = agent.test(test_env, replay_buffer)
+        ep_ret = agent.test(test_env, replay_buffer, n=opt.num_tests)
 
         # ep_ret = agent.test(test_env, replay_buffer)
 
@@ -396,8 +392,7 @@ if __name__ == '__main__':
     elif isinstance(opt.act_space, Discrete):
         a_dim = 1
 
-    replay_buffer = ReplayBuffer_N.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape,
-                                                size=opt.replay_size)
+    replay_buffer = ReplayBuffer_N.remote(obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(opt.num_workers)]
 

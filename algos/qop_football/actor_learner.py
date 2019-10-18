@@ -27,8 +27,7 @@ class Learner(object):
             np.random.seed(opt.seed)
 
             # Inputs to computation graph
-            self.x_ph, self.a_ph, self.x2_ph, = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
-            self.r_ph, self.d_ph, self.logp_pi_ph = core.placeholders((opt.Ln,), (opt.Ln,), (opt.Ln,))
+            self.x_ph, self.a_ph, self.q_backup_ph, = core.placeholders(opt.o_shape, opt.a_shape, None,)
 
             # ------
             # TODO BUG: TypeError: can't pickle _thread.RLock objects
@@ -42,17 +41,11 @@ class Learner(object):
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                mu, pi, logp_pi, self.logp_pi2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                mu, pi, h1x, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu, v1x, v2x = actor_critic(self.x_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
                                                                                                   action_space=opt.act_space,
                                                                                                   use_bn=opt.use_bn, phase=True,
                                                                                                   coefficent_regularizer=opt.c_regularizer)
-
-            # Target value network
-            with tf.variable_scope('target'):
-                _, _, logp_pi_, _, _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
-                                                                                       action_space=opt.act_space,
-                                                                                       use_bn=opt.use_bn, phase=True,
-                                                                                       coefficent_regularizer=opt.c_regularizer)
+            entropy = h1x/alpha_v
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -61,32 +54,16 @@ class Learner(object):
 
             # ------
             if opt.alpha == 'auto':
-                alpha_loss = tf.reduce_mean(-log_alpha * tf.stop_gradient(logp_pi_ + opt.target_entropy))
+                alpha_loss = tf.reduce_mean(-log_alpha * tf.stop_gradient(-h1x + opt.target_entropy))
 
                 alpha_optimizer = tf.train.AdamOptimizer(learning_rate=0.1*opt.lr, name='alpha_optimizer')
                 train_alpha_op = alpha_optimizer.minimize(loss=alpha_loss, var_list=[log_alpha])
             # ------
 
-            # Min Double-Q:
-            if opt.use_max:
-                min_q_pi = tf.minimum(q1_mu_, q2_mu_)
-            else:
-                min_q_pi = tf.minimum(q1_pi_, q2_pi_)  # x2
-
-            # get rid of abnormal explosion
-            min_q_pi = tf.clip_by_value(min_q_pi, -1000.0, 2000.0)
-
-
-            #### n-step backup
-            q_backup = tf.stop_gradient(min_q_pi)
-            for step_i in reversed(range(opt.Ln)):
-                q_backup = self.r_ph[:, step_i] + opt.gamma * (1 - self.d_ph[:, step_i]) * (-alpha_v * self.logp_pi_ph[:, step_i] + q_backup)
-            ####
-
 
             # Soft actor-critic losses
-            q1_loss = 0.5 * tf.reduce_mean((q_backup - q1) ** 2)
-            q2_loss = 0.5 * tf.reduce_mean((q_backup - q2) ** 2)
+            q1_loss = 0.5 * tf.reduce_mean((self.q_backup_ph - q1) ** 2)
+            q2_loss = 0.5 * tf.reduce_mean((self.q_backup_ph - q2) ** 2)
             self.value_loss = q1_loss + q2_loss
 
             value_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr)
@@ -104,10 +81,10 @@ class Learner(object):
 
             # All ops to call during one training step
             if isinstance(alpha_v, Number):
-                self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, tf.identity(alpha_v),
+                self.step_ops = [q1_loss, q2_loss, q1, q2, entropy, tf.identity(alpha_v),
                                  train_value_op, target_update]
             else:
-                self.step_ops = [q1_loss, q2_loss, q1, q2, logp_pi_, alpha_v,
+                self.step_ops = [q1_loss, q2_loss, q1, q2, entropy, alpha_v,
                                  train_value_op, target_update, train_alpha_op]
 
             # Initializing targets to match main variables
@@ -150,21 +127,17 @@ class Learner(object):
         values = [weights[key] for key in keys]
         return keys, values
 
-    def get_logp_pi(self, x):
-        logp_pi_s = []
-        for Ln_i in range(self.opt.Ln):
-            logp_pi_s.append( self.sess.run(self.logp_pi2, feed_dict={self.x2_ph: x[:,Ln_i+1]}) )
-        batch_logp_pi = np.stack(logp_pi_s, axis=1)    # or np.swapaxes(np.array(entropy), 0, 1)
-        return batch_logp_pi
+    # def get_logp_pi(self, x):
+    #     logp_pi_s = []
+    #     for Ln_i in range(self.opt.Ln):
+    #         logp_pi_s.append( self.sess.run(self.logp_pi2, feed_dict={self.x2_ph: x[:,Ln_i+1]}) )
+    #     batch_logp_pi = np.stack(logp_pi_s, axis=1)    # or np.swapaxes(np.array(entropy), 0, 1)
+    #     return batch_logp_pi
 
     def train(self, batch, cnt):
-        batch_logp_pi = self.get_logp_pi(batch['obs'])
-        feed_dict = {self.x_ph: batch['obs'][:, 0],
-                     self.x2_ph: batch['obs'][:, -1],
-                     self.a_ph: batch['acts'][:, 0],
-                     self.logp_pi_ph: batch_logp_pi,
-                     self.r_ph: batch['rews'],
-                     self.d_ph: batch['done'],
+        feed_dict = {self.x_ph: batch['obs'],
+                     self.a_ph: batch['acts'],
+                     self.q_backup_ph: batch['q_backups'],
                      }
         outs = self.sess.run(self.step_ops, feed_dict)
 
@@ -230,10 +203,13 @@ class Actor(object):
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                self.mu, self.pi, _, _, _, _, _, _, _, _, = actor_critic(self.x_ph, self.x2_ph, self.a_ph, alpha_v,hidden_sizes=opt.hidden_size,
+                self.mu, self.pi, self.h1x, _, _, _, _, _, _, self.v1x, self.v2x = actor_critic(self.x_ph, self.a_ph, alpha_v, hidden_sizes=opt.hidden_size,
                                                                          action_space=opt.act_space,
                                                                          use_bn=opt.use_bn, phase=False,
                                                                          coefficent_regularizer=opt.c_regularizer)
+
+            self.vx_min = tf.minimum(self.v1x, self.v2x)
+
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -267,6 +243,13 @@ class Actor(object):
     def get_action(self, o, deterministic):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
+
+    def get_entropy(self, o):
+        return self.sess.run(self.h1x, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
+
+    def get_value(self, o):
+        return self.sess.run(self.vx_min, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
+
 
     def test(self, test_env, replay_buffer, n=50):
         rew = []

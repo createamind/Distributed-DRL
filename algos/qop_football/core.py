@@ -17,26 +17,15 @@ def placeholders(*args):
     return [placeholder(dim) for dim in args]
 
 
-def placeholder_from_space(space):
-    if space is None:
-        return tf.placeholder(dtype=tf.float32,shape=(None,))
-    if isinstance(space, Box):
-        return tf.placeholder(dtype=tf.float32, shape=(None,space.shape[0]))
-    elif isinstance(space, Discrete):
-        return tf.placeholder(dtype=tf.int32, shape=(None,1))
-    raise NotImplementedError
-def placeholders_from_space(*args):
-    return [placeholder_from_space(dim) for dim in args]
-
-
-
 initializer_kernel = tf.variance_scaling_initializer(2.0)
 # Parameter Regularization
 regularizer_l2 = tf.contrib.layers.l2_regularizer
+def fun_regularizer(coef):
+    return (None if coef==0.0 else regularizer_l2(coef))
 # Batch Normalization
-def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
+def dense_batch_relu(inputs, units, activation, phase, coef_regularizer):
     x = tf.layers.dense(inputs, units, activation=activation,
-                         kernel_regularizer=regularizer_l2(coefficent_regularizer), bias_regularizer=regularizer_l2(coefficent_regularizer),
+                         kernel_regularizer=fun_regularizer(coef_regularizer), bias_regularizer=fun_regularizer(coef_regularizer),
                          kernel_initializer=initializer_kernel)
     x = tf.contrib.layers.batch_norm(x,
                                       center=True, scale=True,
@@ -46,23 +35,23 @@ def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
     return x
 
 
-def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=False, phase=True, coefficent_regularizer=0.0):
+def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=False, phase=True, coef_regularizer=0.0):
     # MLP with batch normalization
     if use_bn:
         for h in hidden_sizes[:-1]:
-            x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
-        return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
+            x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coef_regularizer)
+        return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coef_regularizer)
     # Vanilla MLP
     else:
         for h in hidden_sizes[:-1]:
             # x = tf.layers.dense(x, units=h, activation=activation)
             x = tf.layers.dense(x, units=h, activation=activation,
-                                kernel_regularizer=regularizer_l2(coefficent_regularizer),
-                                bias_regularizer=regularizer_l2(coefficent_regularizer),
+                                kernel_regularizer=fun_regularizer(coef_regularizer),
+                                bias_regularizer=fun_regularizer(coef_regularizer),
                                 kernel_initializer=initializer_kernel)
         return tf.layers.dense(x, units=hidden_sizes[-1], activation=output_activation,
-                               kernel_regularizer=regularizer_l2(coefficent_regularizer),
-                               bias_regularizer=regularizer_l2(coefficent_regularizer),
+                               kernel_regularizer=fun_regularizer(coef_regularizer),
+                               bias_regularizer=fun_regularizer(coef_regularizer),
                                kernel_initializer=initializer_kernel)
 
 
@@ -92,9 +81,10 @@ def softmax_policy(alpha, v_x, act_dim):
 
     # logp_pi = tf.reduce_sum(tf.one_hot(mu, depth=act_dim) * pi_log, axis=1)  # use max Q(s,a)
     # logp_pi = tf.reduce_sum(tf.one_hot(pi, depth=act_dim) * pi_log, axis=1)
-    logp_pi = tf.reduce_sum(tf.exp(pi_log)*pi_log, axis=1)                     # exact entropy
+    hx = -alpha * tf.reduce_sum(tf.exp(pi_log)*pi_log, axis=1)                     # exact entropy
+    vx = tf.reduce_sum(tf.exp(pi_log) * v_x, axis=1)                   # value
 
-    return mu, pi, logp_pi
+    return mu, pi, hx, vx
 
 
 
@@ -102,7 +92,7 @@ def softmax_policy(alpha, v_x, act_dim):
 Actor-Critics
 """
 
-def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
+def mlp_actor_critic(x, a, alpha, hidden_sizes, activation=tf.nn.relu,
                      output_activation=None,
                      use_bn=False, phase=True, coefficent_regularizer=0.0,
                      policy=softmax_policy, action_space=None):
@@ -113,7 +103,7 @@ def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
     act_dim = action_space.n
     a_one_hot = tf.one_hot(a, depth=act_dim)      # shape(?,4)
     #vfs
-    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, use_bn=use_bn, phase=phase, coefficent_regularizer=coefficent_regularizer)     # return: shape(?,4)
+    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, use_bn=use_bn, phase=phase, coef_regularizer=coefficent_regularizer)     # return: shape(?,4)
 
 
     ################# Q1
@@ -123,7 +113,7 @@ def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
     v1_x = q1_tp(x)
 
     # policy
-    mu, pi, logp_pi = policy(alpha, v1_x, act_dim)
+    mu, pi, h1x, v1x = policy(alpha, v1_x, act_dim)
 
     mu_one_hot = tf.one_hot(mu, depth=act_dim)
     pi_one_hot = tf.one_hot(pi, depth=act_dim)
@@ -133,11 +123,6 @@ def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
     q1_mu = tf.reduce_sum(v1_x * mu_one_hot, axis=1)  # use max Q(s,a)
     q1_pi = tf.reduce_sum(v1_x * pi_one_hot, axis=1)
 
-    v1_x2 = q1_tp(x2)
-
-    # policy
-    mu_x2, pi_x2, logp_pi_x2 = policy(alpha, v1_x2, act_dim)
-
 
     ################# Q2
 
@@ -145,7 +130,7 @@ def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
 
     v2_x = q2_tp(x)
 
-    mu2, pi2, logp_pi2 = policy(alpha, v2_x, act_dim)
+    mu2, pi2, h2x, v2x = policy(alpha, v2_x, act_dim)
 
     mu2_one_hot = tf.one_hot(mu2, depth=act_dim)
 
@@ -155,6 +140,6 @@ def mlp_actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
     q2_pi = tf.reduce_sum(v2_x * pi_one_hot, axis=1)
 
     # shape(?,)
-    return mu, pi, logp_pi, logp_pi_x2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu
+    return mu, pi, h1x, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu, v1x, v2x
 
 
