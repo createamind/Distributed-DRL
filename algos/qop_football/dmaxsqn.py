@@ -344,7 +344,7 @@ def worker_test(ps, replay_buffer, opt):
             print("****** Weights saved by time! ******")
             max_sample_times = sample_times2 // int(1e6)
 
-        if ep_ret > max_ret:
+        if ep_ret >= max_ret:
             pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
             pickle.dump(weights_all, pickle_out)
             pickle_out.close()
