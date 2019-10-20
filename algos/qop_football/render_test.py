@@ -33,7 +33,7 @@ opt = HyperParameters()
 
 agent = Actor(opt, job="test") # 11v11_0.1_Ln5_rp2_mp1/1M_weights.pickle # random_easy_new_a/31M_weights.pickle
 keys, weights = agent.get_weights()  # 11v11_easy_Ln5_rp2_-1done_scale225_exp2/ # 11v11_easy_new642_33_200
-pickle_in = open("./data/debug_11v11_easy_343_200_done_vqloss_clip10/1M_weights.pickle", "rb") # lazy_0.1/7M_weights.pickle  11v11_incentive_0.1/Maxret_weights.pickle
+pickle_in = open("./data/debug_11v11_easy_343_200_done_vqloss_clip10/Max_weights.pickle", "rb") # lazy_0.1/7M_weights.pickle  11v11_incentive_0.1/Maxret_weights.pickle
 weights = pickle.load(pickle_in)
 
 

@@ -12,7 +12,7 @@ class HyperParameters:
 
         self.env_name = "11_vs_11_easy_stochastic"  #'academy_empty_goal' #
         self.rollout_env_name = self.env_name
-        self.exp_name = 'debug_11v11_easy_343_200_done_vqloss_clip10_random_incentive1'
+        self.exp_name = 'debug_11v11_easy_343_200_done_vqloss_clip10_random'
 
         self.env_random = True
         self.deterministic = False
@@ -134,14 +134,14 @@ class FootballWrapper(object):
             # if (not done) and reward != 1.0:  # when env is done, ball position will be reset.
             #     reward += incentive
 
-            reward += self.incentive1(obs)
+            # reward += self.incentive1(obs)
 
             r += reward
 
             if done:
-                return obs, r * 150, done, info
+                return obs, r * 200, done, info
 
-        return obs, r * 150, done, info
+        return obs, r * 200, done, info
 
     def incentive(self, obs):
         # total accumulative incentive reward is around 0.5
