@@ -29,7 +29,7 @@ class HyperParameters:
 
         self.a_l_ratio = a_l_ratio
         self.weights_file = weights_file
-        self.start_steps = int(3e4)
+        self.start_steps = int(5e4)
         if self.weights_file:
             self.start_steps = int(5e5)
 
@@ -73,7 +73,7 @@ class HyperParameters:
         self.c_regularizer = 0.0
 
         self.gamma = 0.997
-        self.replay_size = int(1e3)
+        self.replay_size = int(3e6)
 
         self.lr = 5e-5
         self.polyak = 0.995
