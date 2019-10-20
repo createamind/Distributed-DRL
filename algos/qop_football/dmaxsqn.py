@@ -204,7 +204,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     while True:
 
-        mb_obs, mb_rewards, mb_actions, mb_dones = [], [], [], []
+        mb_obs, mb_rewards, mb_actions, mb_dones, mb_values = [], [], [], [], []
 
         for _ in range(opt.num_steps):
 
@@ -222,8 +222,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             ep_ret += r
             ep_len += 1
 
+            v = agent.get_value(o)
             h = agent.get_entropy(o)
             r += h
+
 
             # Ignore the "done" signal if it comes from hitting the time
             # horizon (that is, when it's an artificial terminal signal
@@ -232,39 +234,42 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             mb_actions.append(a)
             mb_rewards.append(r)
-            mb_dones.append(d)
+            # mb_dones.append(d)
 
-            if d:
-                print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
-                o2, ep_ret, ep_len = env.reset(), 0, 0
+            mb_values.append(v)
 
             # Super critical, easy to overlook step: make sure to update
             # most recent observation!
             o = o2
 
-            if ep_len == opt.max_ep_len:
+            if d or ep_len == opt.max_ep_len:
                 print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
                 o, ep_ret, ep_len = env.reset(), 0, 0
                 break
 
 
+        mb_values.append(agent.get_value(o2))
+
         mb_actions = np.asarray(mb_actions)
         mb_obs = np.asarray(mb_obs)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        # mb_dones = np.asarray(mb_dones, dtype=np.bool)
 
-        value = agent.get_value(o2)
+        mb_values = np.asarray(mb_values, dtype=np.float32)
+
 
         mb_q_backup = np.zeros_like(mb_rewards)
 
         len_mb = len(mb_rewards)
 
-        q_backup = value
-
+        # to do
+        adv = 0.0
         # n-step backup
         for step_i in reversed(range(len_mb)):
-            q_backup = mb_rewards[step_i] + opt.gamma * (1 - mb_dones[step_i]) * q_backup
-            mb_q_backup[step_i] = q_backup
+            isdone = d if step_i==len_mb-1 else 0
+            delta = mb_rewards[step_i] + opt.gamma * (1-isdone) * mb_values[step_i+1] - mb_values[step_i]
+            adv = opt.gamma * opt.lam * adv + delta
+            mb_q_backup[step_i] = adv + mb_values[step_i]
 
 
         # restore data for training

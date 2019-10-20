@@ -45,7 +45,7 @@ class Learner(object):
                                                                                                   action_space=opt.act_space,
                                                                                                   use_bn=opt.use_bn, phase=True,
                                                                                                   coefficent_regularizer=opt.c_regularizer)
-            entropy = h1x/alpha_v
+            logpi = -h1x/alpha_v
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in
@@ -62,9 +62,11 @@ class Learner(object):
 
 
             # Soft actor-critic losses
-            q1_loss = 0.5 * tf.reduce_mean((self.q_backup_ph - q1) ** 2)
-            q2_loss = 0.5 * tf.reduce_mean((self.q_backup_ph - q2) ** 2)
-            self.value_loss = q1_loss + q2_loss
+            q1_loss = 0.5 * tf.reduce_mean(tf.clip_by_value(self.q_backup_ph - q1, -10, 10) ** 2)
+            q2_loss = 0.5 * tf.reduce_mean(tf.clip_by_value(self.q_backup_ph - q2, -10, 10) ** 2)
+            v1_loss = 0.5 * tf.reduce_mean(tf.clip_by_value(self.q_backup_ph - v1x, -10, 10) ** 2)
+            v2_loss = 0.5 * tf.reduce_mean(tf.clip_by_value(self.q_backup_ph - v2x, -10, 10) ** 2)
+            self.value_loss = q1_loss + q2_loss + v1_loss + v2_loss
 
             value_optimizer = tf.train.AdamOptimizer(learning_rate=opt.lr)
             value_params = get_vars('main/q')
@@ -81,10 +83,10 @@ class Learner(object):
 
             # All ops to call during one training step
             if isinstance(alpha_v, Number):
-                self.step_ops = [q1_loss, q2_loss, q1, q2, entropy, tf.identity(alpha_v),
+                self.step_ops = [q1_loss, q2_loss, q1, q2, logpi, tf.identity(alpha_v),
                                  train_value_op, target_update]
             else:
-                self.step_ops = [q1_loss, q2_loss, q1, q2, entropy, alpha_v,
+                self.step_ops = [q1_loss, q2_loss, q1, q2, logpi, alpha_v,
                                  train_value_op, target_update, train_alpha_op]
 
             # Initializing targets to match main variables
