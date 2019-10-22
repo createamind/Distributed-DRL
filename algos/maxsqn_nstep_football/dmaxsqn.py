@@ -219,7 +219,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     ################################## deques reset
     t_queue = 1
-    if opt.model == "cnn":
+    if False:
+    # if opt.model == "cnn":
         compressed_o = pack(o)
         o_queue.append((compressed_o,))
     else:
@@ -255,7 +256,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         #################################### deques store
 
         a_r_d_queue.append( (a, r, d,) )
-        if opt.model == "cnn":
+        if False:
+        # if opt.model == "cnn":
             compressed_o2 = pack(o2)
             o_queue.append((compressed_o2,))
         else:
@@ -296,7 +298,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             ################################## deques reset
             t_queue = 1
-            if opt.model == "cnn":
+            if False:
+            # if opt.model == "cnn":
                 compressed_o = pack(o)
                 o_queue.append((compressed_o,))
             else:
