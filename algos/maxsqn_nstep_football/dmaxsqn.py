@@ -172,19 +172,10 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
     cnt = 1
     while True:
-        start1 = time.time()
         batch = cache.q1.get()
-        start2 = time.time()
-
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
-        start3 = time.time()
         agent.train(batch, cnt)
-        start4 = time.time()
-        print("cache.q1.get time: ", start2-start1)
-        if opt.model == "cnn":
-            print("unpack time: ", start3-start2)
-        print("agent.train time: ", start4 - start3)
         if cnt % 300 == 0:
             cache.q2.put(agent.get_weights())
         cnt += 1
