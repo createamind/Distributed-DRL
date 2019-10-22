@@ -15,7 +15,7 @@ from collections import deque
 
 import inspect
 import json
-
+from ray.rllib.utils.compression import pack, unpack
 
 import gfootball.env as football_env
 
@@ -38,7 +38,11 @@ class ReplayBuffer:
     """
 
     def __init__(self, Ln, obs_shape, act_shape, size):
-        self.buffer_o = np.zeros((size, Ln + 1)+obs_shape, dtype=np.float32)
+        self.obs_shape = obs_shape
+        if obs_shape != (115,):
+            self.buffer_o = np.array([['0'*2000]*(Ln+1)] * size, dtype=np.str)
+        else:
+            self.buffer_o = np.zeros((size, Ln + 1)+obs_shape, dtype=np.float32)
         self.buffer_a = np.zeros((size, Ln)+act_shape, dtype=np.float32)
         self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
         self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
@@ -46,8 +50,18 @@ class ReplayBuffer:
         self.steps, self.sample_times = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
+        # o_queue = list(o_queue)
+        # print(o_queue)
+        # print(type(o_queue))
         obs, = np.stack(o_queue, axis=1)
-        self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
+        # print(len(obs[0]))
+        # print(type(obs))
+        # print(obs)
+        if self.obs_shape != (115,):
+            self.buffer_o[self.ptr] = obs
+            # print(len(self.buffer_o[self.ptr][0]))
+        else:
+            self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
 
         a, r, d, = np.stack(a_r_d_queue, axis=1)
         self.buffer_a[self.ptr] = np.array(list(a), dtype=np.float32)
@@ -59,9 +73,12 @@ class ReplayBuffer:
 
         self.steps += 1
 
+        # print(self.buffer_o[0])
+
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
         self.sample_times += 1
+
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
                     rews=self.buffer_r[idxs],
@@ -163,6 +180,8 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     cnt = 1
     while True:
         batch = cache.q1.get()
+        # print(np.array([[unpack(o) for o in lno] for lno in batch['obs']]))
+        batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
         if cnt % 300 == 0:
             cache.q2.put(agent.get_weights())
@@ -193,7 +212,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
     ################################## deques reset
     t_queue = 1
-    o_queue.append((o,))
+    if opt.model == "cnn":
+        compressed_o = pack(o)
+        o_queue.append((compressed_o,))
+    else:
+        o_queue.append((o,))
 
     ################################## deques reset
 
@@ -225,7 +248,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         #################################### deques store
 
         a_r_d_queue.append( (a, r, d,) )
-        o_queue.append((o2,))
+        if opt.model == "cnn":
+            compressed_o2 = pack(o2)
+            o_queue.append((compressed_o2,))
+        else:
+            o_queue.append((o2,))
 
         if t_queue % opt.Ln == 0:
             replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
@@ -233,7 +260,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         if d and t_queue % opt.Ln != 0:
             for _0 in range(opt.Ln - t_queue % opt.Ln):
                 a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
-                o_queue.append((np.zeros((opt.obs_dim,), dtype=np.float32), ))
+                if opt.model == "cnn":
+                    o_queue.append(None,)
+                else:
+                    o_queue.append((np.zeros((opt.obs_dim,), dtype=np.float32), ))
             replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
 
         t_queue += 1
@@ -259,7 +289,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             ################################## deques reset
             t_queue = 1
-            o_queue.append((o,))
+            if opt.model == "cnn":
+                compressed_o = pack(o)
+                o_queue.append((compressed_o,))
+            else:
+                o_queue.append((o,))
 
             ################################## deques reset
 

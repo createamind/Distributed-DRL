@@ -9,7 +9,7 @@ EPS = 1e-8
 def placeholder(dim=None):
     if dim is None:
         return tf.placeholder(dtype=tf.float32, shape=(None,))
-    elif len(dim)==0:
+    elif len(dim) == 0:
         return tf.placeholder(dtype=tf.int32, shape=((None,) + dim))       # for Discrete
     else:
         return tf.placeholder(dtype=tf.float32, shape=((None,) + dim))     # for Box
@@ -17,20 +17,6 @@ def placeholder(dim=None):
 
 def placeholders(*args):
     return [placeholder(dim) for dim in args]
-
-
-def placeholder_from_space(space):
-    if space is None:
-        return tf.placeholder(dtype=tf.float32,shape=(None,))
-    if isinstance(space, Box):
-        return tf.placeholder(dtype=tf.float32, shape=(None, space.shape[0]))
-    elif isinstance(space, Discrete):
-        return tf.placeholder(dtype=tf.int32, shape=(None,1))
-    raise NotImplementedError
-
-
-def placeholders_from_space(*args):
-    return [placeholder_from_space(dim) for dim in args]
 
 
 initializer_kernel = tf.variance_scaling_initializer(2.0)
