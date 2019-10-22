@@ -50,16 +50,11 @@ class ReplayBuffer:
         self.steps, self.sample_times = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
-        # o_queue = list(o_queue)
-        # print(o_queue)
-        # print(type(o_queue))
+
         obs, = np.stack(o_queue, axis=1)
-        # print(len(obs[0]))
-        # print(type(obs))
-        # print(obs)
+
         if self.obs_shape != (115,):
             self.buffer_o[self.ptr] = obs
-            # print(len(self.buffer_o[self.ptr][0]))
         else:
             self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
 
@@ -72,8 +67,6 @@ class ReplayBuffer:
         self.size = min(self.size + 1, self.max_size)
 
         self.steps += 1
-
-        # print(self.buffer_o[0])
 
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
@@ -182,13 +175,15 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         start1 = time.time()
         batch = cache.q1.get()
         start2 = time.time()
-        # print(np.array([[unpack(o) for o in lno] for lno in batch['obs']]))
-        batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
+
+        if isinstance(batch['obs'][0][0], str):
+            batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         start3 = time.time()
         agent.train(batch, cnt)
         start4 = time.time()
         print("cache.q1.get time: ", start2-start1)
-        print("unpack time: ", start3-start2)
+        if isinstance(batch['obs'][0][0], str):
+            print("unpack time: ", start3-start2)
         print("agent.train time: ", start4 - start3)
         if cnt % 300 == 0:
             cache.q2.put(agent.get_weights())
