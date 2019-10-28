@@ -19,7 +19,7 @@ class HyperParameters:
 
         self.with_checkpoints = False
 
-        self.model = "cnn"
+        self.model = "mlp"
         assert self.model in ["mlp", "cnn"], "model must be mlp or cnn!"
         if self.model == "cnn":
             self.representation = "extracted"
@@ -32,7 +32,7 @@ class HyperParameters:
         self.weights_file = weights_file
         self.start_steps = int(5e4)
         if self.weights_file:
-            self.start_steps = int(5e5)
+            self.start_steps = int(3e6)
 
         # gpu memory fraction
         self.gpu_fraction = 0.2
