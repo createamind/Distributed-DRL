@@ -257,7 +257,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 if opt.model == "cnn":
                     o_queue.append(None,)
                 else:
-                    o_queue.append((np.zeros((opt.obs_dim,), dtype=np.float32), ))
+                    o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32), ))
             replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
 
         t_queue += 1
