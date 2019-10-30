@@ -14,7 +14,7 @@ class HyperParameters:
         self.env_name = env_name
 
         # "_random", "_d_True", ""
-        self.rollout_env_name = self.env_name + ""
+        self.rollout_env_name = self.env_name + "_random"
         self.exp_name = str(exp_name)
 
         self.with_checkpoints = False
@@ -118,6 +118,10 @@ class FootballWrapper(object):
         r = 0.0
         for _ in range(3):
             obs, reward, done, info = self._env.step(action)
+
+            if reward < 0.0:
+                done = True
+                reward = 0.0
 
             r += reward
 
