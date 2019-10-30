@@ -174,7 +174,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     while True:
         batch = cache.q1.get()
         if opt.model == "cnn":
-            batch['obs'] = np.array([[unpack(o) if o is not None else np.zeros(opt.obs_dim, dtype=np.float32) for o in lno] for lno in batch['obs']])
+            batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
         # TODO
         if cnt % 100 == 0:
@@ -255,7 +255,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             for _0 in range(opt.Ln - t_queue % opt.Ln):
                 a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
                 if opt.model == "cnn":
-                    o_queue.append(([None]))
+                    o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)), ))
                 else:
                     o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32), ))
             replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
