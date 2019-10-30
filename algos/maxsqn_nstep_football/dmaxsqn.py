@@ -176,7 +176,8 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
-        if cnt % 300 == 0:
+        # TODO
+        if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
         cnt += 1
 
@@ -392,14 +393,14 @@ if __name__ == '__main__':
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if opt.weights_file:
-        start_steps = opt.start_steps / 10
+        fill_steps = opt.start_steps / 100
     else:
-        start_steps = opt.start_steps
+        fill_steps = opt.start_steps
     # store at least start_steps in buffer before training
     _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-    while steps < start_steps:
+    while steps < fill_steps:
         _, steps, _ = ray.get(replay_buffer.get_counts.remote())
-        print('start steps before learn:', steps)
+        print('fill steps before learn:', steps)
         time.sleep(1)
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
