@@ -90,7 +90,7 @@ class DuelingDQN(Model):
             q_values = fcnv + tf.subtract(fcna, tf.reduce_mean(fcna, axis=1, keepdims=True))
             # output = tf.argmax(q_values, 1)
 
-        return q_values, fcn4
+        return q_values
 
 
 def _get_filter_config(shape):
