@@ -307,7 +307,7 @@ def worker_test(ps, replay_buffer, opt):
     while True:
 
         # ------ env set up ------
-        test_env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(opt.game_difficulty),
+        test_env = football_env.create_environment(env_name=opt.env_name + '_' + str(opt.game_difficulty),
                                                    stacked=opt.stacked, representation=opt.representation, render=False)
         # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
         opt.game_difficulty += 1
