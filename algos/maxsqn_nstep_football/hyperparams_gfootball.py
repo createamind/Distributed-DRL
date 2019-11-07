@@ -89,6 +89,8 @@ class HyperParameters:
         self.save_freq = 1
 
         self.max_ret = 0
+        self.game_difficulty = 1
+        self.threshold_score = 6
 
         self.seed = 0
 

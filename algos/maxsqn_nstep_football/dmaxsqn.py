@@ -23,9 +23,9 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 # "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
-flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
+flags.DEFINE_string("env_name", "11_vs_11_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 1, "number of workers")
+flags.DEFINE_integer("num_workers", 6, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -40,10 +40,10 @@ class ReplayBuffer:
     def __init__(self, Ln, obs_shape, act_shape, size):
         self.obs_shape = obs_shape
         if obs_shape != (115,):
-            self.buffer_o = np.array([['0'*2000]*(Ln+1)] * size, dtype=np.str)
+            self.buffer_o = np.array([['0' * 2000] * (Ln + 1)] * size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((size, Ln + 1)+obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((size, Ln)+act_shape, dtype=np.float32)
+            self.buffer_o = np.zeros((size, Ln + 1) + obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((size, Ln) + act_shape, dtype=np.float32)
         self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
         self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
@@ -75,7 +75,7 @@ class ReplayBuffer:
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
                     rews=self.buffer_r[idxs],
-                    done=self.buffer_d[idxs],)
+                    done=self.buffer_d[idxs], )
 
     def get_counts(self):
         return self.sample_times, self.steps, self.size
@@ -114,7 +114,7 @@ class ParameterServer(object):
 
     # save weights to disk
     def save_weights(self, name):
-        pickle_out = open(name+"weights.pickle", "wb")
+        pickle_out = open(name + "weights.pickle", "wb")
         pickle.dump(self.weights, pickle_out)
         pickle_out.close()
 
@@ -152,7 +152,6 @@ class Cache(object):
 
 @ray.remote(num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
-
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
     weights = ray.get(ps.pull.remote(keys))
@@ -184,117 +183,119 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-
-    # ------ env set up ------
-    # env = gym.make(opt.env_name)
-    env = football_env.create_environment(env_name=opt.rollout_env_name,
-                                          stacked=opt.stacked, representation=opt.representation, render=False)
-    env = FootballWrapper(env)
-    # ------ env set up end ------
-
-    agent = Actor(opt, job="worker")
-    keys = agent.get_weights()[0]
-
-    ################################## deques
-
-    o_queue = deque([], maxlen=opt.Ln + 1)
-    a_r_d_queue = deque([], maxlen=opt.Ln)
-
-    ################################## deques
-
-    o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-
-    ################################## deques reset
-    t_queue = 1
-    if opt.model == "cnn":
-        compressed_o = pack(o)
-        o_queue.append((compressed_o,))
-    else:
-        o_queue.append((o,))
-
-    ################################## deques reset
-
-    weights = ray.get(ps.pull.remote(keys))
-    agent.set_weights(keys, weights)
-
-    # for t in range(total_steps):
-    t = 0
     while True:
-        # don't need to random sample action if load weights from local.
-        if t > opt.start_steps or opt.weights_file:
-            a = agent.get_action(o, deterministic=False)
-        else:
-            a = env.action_space.sample()
-            t += 1
-        # Step the env
-        o2, r, d, _ = env.step(a)
+        # ------ env set up ------
+        # env = gym.make(opt.env_name)
+        using_difficulty = opt.game_difficulty
+        env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
+                                              stacked=opt.stacked, representation=opt.representation, render=False)
+        env = FootballWrapper(env)
+        # ------ env set up end ------
 
-        ep_ret += r
-        ep_len += 1
+        agent = Actor(opt, job="worker")
+        keys = agent.get_weights()[0]
 
-        # Ignore the "done" signal if it comes from hitting the time
-        # horizon (that is, when it's an artificial terminal signal
-        # that isn't based on the agent's state)
-        d = False if ep_len == opt.max_ep_len else d
+        ################################## deques
 
-        o = o2
+        o_queue = deque([], maxlen=opt.Ln + 1)
+        a_r_d_queue = deque([], maxlen=opt.Ln)
 
-        #################################### deques store
+        ################################## deques
 
-        a_r_d_queue.append( (a, r, d,) )
+        o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+
+        ################################## deques reset
+        t_queue = 1
         if opt.model == "cnn":
-            compressed_o2 = pack(o2)
-            o_queue.append((compressed_o2,))
+            compressed_o = pack(o)
+            o_queue.append((compressed_o,))
         else:
-            o_queue.append((o2,))
+            o_queue.append((o,))
 
-        if t_queue % opt.Ln == 0:
-            replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+        ################################## deques reset
 
-        if d and t_queue % opt.Ln != 0:
-            for _0 in range(opt.Ln - t_queue % opt.Ln):
-                a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
-                if opt.model == "cnn":
-                    o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)), ))
-                else:
-                    o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32), ))
-            replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+        weights = ray.get(ps.pull.remote(keys))
+        agent.set_weights(keys, weights)
 
-        t_queue += 1
+        # for t in range(total_steps):
+        t = 0
 
-        #################################### deques store
-
-        # End of episode. Training (ep_len times).
-        if d or (ep_len == opt.max_ep_len):
-            sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-
-            while sample_times > 0 and (steps-opt.start_steps) / sample_times > opt.a_l_ratio:
-                sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-                time.sleep(0.1)
-
-            print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
-
-            if steps > opt.start_steps:
-                # update parameters every episode
-                weights = ray.get(ps.pull.remote(keys))
-                agent.set_weights(keys, weights)
-
-            o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-
-            ################################## deques reset
-            t_queue = 1
-            if opt.model == "cnn":
-                compressed_o = pack(o)
-                o_queue.append((compressed_o,))
+        # if current score lager than threshold score then game difficulty plus 0.05
+        while using_difficulty == opt.game_difficulty:
+            # don't need to random sample action if load weights from local.
+            if t > opt.start_steps or opt.weights_file:
+                a = agent.get_action(o, deterministic=False)
             else:
-                o_queue.append((o,))
+                a = env.action_space.sample()
+                t += 1
+            # Step the env
+            o2, r, d, _ = env.step(a)
 
-            ################################## deques reset
+            ep_ret += r
+            ep_len += 1
+
+            # Ignore the "done" signal if it comes from hitting the time
+            # horizon (that is, when it's an artificial terminal signal
+            # that isn't based on the agent's state)
+            d = False if ep_len == opt.max_ep_len else d
+
+            o = o2
+
+            #################################### deques store
+
+            a_r_d_queue.append((a, r, d,))
+            if opt.model == "cnn":
+                compressed_o2 = pack(o2)
+                o_queue.append((compressed_o2,))
+            else:
+                o_queue.append((o2,))
+
+            if t_queue % opt.Ln == 0:
+                replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+
+            if d and t_queue % opt.Ln != 0:
+                for _0 in range(opt.Ln - t_queue % opt.Ln):
+                    a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
+                    if opt.model == "cnn":
+                        o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)),))
+                    else:
+                        o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32),))
+                replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+
+            t_queue += 1
+
+            #################################### deques store
+
+            # End of episode. Training (ep_len times).
+            if d or (ep_len == opt.max_ep_len):
+                sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
+
+                while sample_times > 0 and (steps - opt.start_steps) / sample_times > opt.a_l_ratio:
+                    sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
+                    time.sleep(0.1)
+
+                print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
+
+                if steps > opt.start_steps:
+                    # update parameters every episode
+                    weights = ray.get(ps.pull.remote(keys))
+                    agent.set_weights(keys, weights)
+
+                o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+
+                ################################## deques reset
+                t_queue = 1
+                if opt.model == "cnn":
+                    compressed_o = pack(o)
+                    o_queue.append((compressed_o,))
+                else:
+                    o_queue.append((o,))
+
+                ################################## deques reset
 
 
 @ray.remote
 def worker_test(ps, replay_buffer, opt):
-
     agent = Actor(opt, job="main")
 
     keys, weights = agent.get_weights()
@@ -303,55 +304,63 @@ def worker_test(ps, replay_buffer, opt):
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
 
     max_sample_times = 0
-
-    # ------ env set up ------
-    test_env = football_env.create_environment(env_name=opt.env_name,
-                                               stacked=opt.stacked, representation=opt.representation, render=False)
-    # test_env = FootballWrapper(test_env)
-
-    # test_env = gym.make(opt.env_name)
-    # ------ env set up end ------
-
     while True:
-        # weights_all for save it to local
-        weights_all = ray.get(ps.get_weights.remote())
-        weights = [weights_all[key] for key in keys]
 
-        agent.set_weights(keys, weights)
+        # ------ env set up ------
+        test_env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(opt.game_difficulty),
+                                                   stacked=opt.stacked, representation=opt.representation, render=False)
+        # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
+        opt.game_difficulty += 1
 
-        ep_ret = agent.test(test_env, replay_buffer)
+        current_ret = 0
 
-        sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
-        time2 = time.time()
+        # test_env = FootballWrapper(test_env)
 
-        print("----------------------------------")
-        print("| test_reward:", ep_ret)
-        print("| sample_times:", sample_times2)
-        print("| steps:", steps)
-        print("| env_steps:", steps*opt.Ln)
-        print("| buffer_size:", size)
-        print("| actual a_l_ratio:", str((steps-opt.start_steps)/(sample_times2+1))[:4])
-        print('- update frequency:', (sample_times2-sample_times1)/(time2-time1), 'total time:', time2 - time0)
-        print("----------------------------------")
+        # test_env = gym.make(opt.env_name)
+        # ------ env set up end ------
 
-        if sample_times2 // int(1e6) > max_sample_times:
-            pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3]+"M_weights.pickle", "wb")
-            pickle.dump(weights_all, pickle_out)
-            pickle_out.close()
-            print("****** Weights saved by time! ******")
-            max_sample_times = sample_times2 // int(1e6)
+        while current_ret < opt.threshold_score:
+            # weights_all for save it to local
+            weights_all = ray.get(ps.get_weights.remote())
+            weights = [weights_all[key] for key in keys]
 
-        if ep_ret > opt.max_ret:
-            pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
-            pickle.dump(weights_all, pickle_out)
-            pickle_out.close()
-            print("****** Weights saved by maxret! ******")
-            opt.max_ret = ep_ret
+            agent.set_weights(keys, weights)
 
-        time1 = time2
-        sample_times1 = sample_times2
+            ep_ret = agent.test(test_env, replay_buffer)
+            current_ret = ep_ret
 
-        time.sleep(5)
+            sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
+            time2 = time.time()
+
+            print("----------------------------------")
+            print("| test_reward:", ep_ret)
+            print("| sample_times:", sample_times2)
+            print("| steps:", steps)
+            print("| env_steps:", steps * opt.Ln)
+            print("| buffer_size:", size)
+            print("| actual a_l_ratio:", str((steps - opt.start_steps) / (sample_times2 + 1))[:4])
+            print('- update frequency:', (sample_times2 - sample_times1) / (time2 - time1), 'total time:',
+                  time2 - time0)
+            print("----------------------------------")
+
+            if sample_times2 // int(1e6) > max_sample_times:
+                pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3] + "M_weights.pickle", "wb")
+                pickle.dump(weights_all, pickle_out)
+                pickle_out.close()
+                print("****** Weights saved by time! ******")
+                max_sample_times = sample_times2 // int(1e6)
+
+            if ep_ret > opt.max_ret:
+                pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
+                pickle.dump(weights_all, pickle_out)
+                pickle_out.close()
+                print("****** Weights saved by maxret! ******")
+                opt.max_ret = ep_ret
+
+            time1 = time2
+            sample_times1 = sample_times2
+
+            time.sleep(5)
 
 
 if __name__ == '__main__':
@@ -365,6 +374,7 @@ if __name__ == '__main__':
     All_Parameters = copy.deepcopy(vars(opt))
     All_Parameters["wrapper"] = inspect.getsource(FootballWrapper)
     import importlib
+
     scenario = importlib.import_module('gfootball.scenarios.{}'.format(opt.rollout_env_name))
     All_Parameters["rollout_env_class"] = inspect.getsource(scenario.build_scenario)
     All_Parameters["obs_space"] = ""

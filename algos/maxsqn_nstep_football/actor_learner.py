@@ -45,7 +45,7 @@ class Learner(object):
 
             # Target value network
             with tf.variable_scope('target'):
-                _, _, logp_pi_, _,  _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ \
+                _, _, logp_pi_, _, _, _, q1_pi_, q2_pi_, q1_mu_, q2_mu_ \
                     = actor_critic(self.x2_ph, self.x2_ph, self.a_ph, alpha_v,
                                    use_bn=opt.use_bn, phase=True, coefficent_regularizer=opt.c_regularizer,
                                    hidden_sizes=opt.hidden_size,
@@ -73,7 +73,6 @@ class Learner(object):
 
             # get rid of abnormal explosion
             min_q_pi = tf.clip_by_value(min_q_pi, -300.0, 900.0)
-
 
             #### n-step backup
             q_backup = tf.stop_gradient(min_q_pi)
@@ -150,8 +149,8 @@ class Learner(object):
     def get_logp_pi(self, x):
         logp_pi_s = []
         for Ln_i in range(self.opt.Ln):
-            logp_pi_s.append( self.sess.run(self.logp_pi2, feed_dict={self.x2_ph: x[:,Ln_i+1]}) )
-        batch_logp_pi = np.stack(logp_pi_s, axis=1)    # or np.swapaxes(np.array(entropy), 0, 1)
+            logp_pi_s.append(self.sess.run(self.logp_pi2, feed_dict={self.x2_ph: x[:, Ln_i + 1]}))
+        batch_logp_pi = np.stack(logp_pi_s, axis=1)  # or np.swapaxes(np.array(entropy), 0, 1)
         return batch_logp_pi
 
     def train(self, batch, cnt):
@@ -283,22 +282,25 @@ class Actor(object):
 
         sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
         summary_str = self.sess.run(self.test_ops, feed_dict={
-            self.test_vars[0]: sum(rew)/n,
-            self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1)
+            self.test_vars[0]: sum(rew) / n,
+            self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1),
+            self.test_vars[1]: self.opt.game_difficulty
         })
 
         self.writer.add_summary(summary_str, sample_times)
         self.writer.flush()
-        return sum(rew)/n
+        return sum(rew) / n
 
     # Tensorflow Summary Ops
     def build_summaries(self):
         test_summaries = []
         episode_reward = tf.Variable(0.)
         a_l_ratio = tf.Variable(0.)
+        game_difficulty = tf.Variable(0.)
         test_summaries.append(tf.summary.scalar("Reward", episode_reward))
         test_summaries.append(tf.summary.scalar("a_l_ratio", a_l_ratio))
+        test_summaries.append(tf.summary.scalar("current_game_difficulty", game_difficulty))
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward, a_l_ratio]
+        test_vars = [episode_reward, a_l_ratio, game_difficulty]
 
         return test_ops, test_vars

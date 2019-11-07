@@ -10,9 +10,9 @@ def placeholder(dim=None):
     if dim is None:
         return tf.placeholder(dtype=tf.float32, shape=(None,))
     elif len(dim) == 0:
-        return tf.placeholder(dtype=tf.int32, shape=((None,) + dim))       # for Discrete
+        return tf.placeholder(dtype=tf.int32, shape=((None,) + dim))  # for Discrete
     else:
-        return tf.placeholder(dtype=tf.float32, shape=((None,) + dim))     # for Box
+        return tf.placeholder(dtype=tf.float32, shape=((None,) + dim))  # for Box
 
 
 def placeholders(*args):
@@ -27,22 +27,26 @@ regularizer_l2 = tf.contrib.layers.l2_regularizer
 # Batch Normalization
 def dense_batch_relu(inputs, units, activation, phase, coefficent_regularizer):
     x = tf.layers.dense(inputs, units, activation=activation,
-                         kernel_regularizer=regularizer_l2(coefficent_regularizer), bias_regularizer=regularizer_l2(coefficent_regularizer),
-                         kernel_initializer=initializer_kernel)
+                        kernel_regularizer=regularizer_l2(coefficent_regularizer),
+                        bias_regularizer=regularizer_l2(coefficent_regularizer),
+                        kernel_initializer=initializer_kernel)
     x = tf.contrib.layers.batch_norm(x,
-                                      center=True, scale=True,
-                                      is_training=phase, fused=False)
+                                     center=True, scale=True,
+                                     is_training=phase, fused=False)
     if activation:
         x = activation(x)
     return x
 
 
-def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=False, phase=True, coefficent_regularizer=0.0):
+def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=False, phase=True,
+        coefficent_regularizer=0.0):
     # MLP with batch normalization
     if use_bn:
         for h in hidden_sizes[:-1]:
-            x = dense_batch_relu(x, units=h, activation=activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
-        return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase, coefficent_regularizer=coefficent_regularizer)
+            x = dense_batch_relu(x, units=h, activation=activation, phase=phase,
+                                 coefficent_regularizer=coefficent_regularizer)
+        return dense_batch_relu(x, units=hidden_sizes[-1], activation=output_activation, phase=phase,
+                                coefficent_regularizer=coefficent_regularizer)
     # Vanilla MLP
     else:
         for h in hidden_sizes[:-1]:
@@ -57,7 +61,7 @@ def mlp(x, hidden_sizes=(32,), activation=None, output_activation=None, use_bn=F
                                kernel_initializer=initializer_kernel)
 
 
-def nature_cnn(unscaled_images,  **conv_kwargs):
+def nature_cnn(unscaled_images, **conv_kwargs):
     """
     CNN from Nature paper.
     """
@@ -157,8 +161,7 @@ Policies
 
 
 def softmax_policy(alpha, v_x, act_dim):
-
-    pi_log = tf.nn.log_softmax(v_x/alpha, axis=1)
+    pi_log = tf.nn.log_softmax(v_x / alpha, axis=1)
     mu = tf.argmax(pi_log, axis=1)
 
     # tf.random.multinomial( logits, num_samples, seed=None, name=None, output_dtype=None )
@@ -168,7 +171,7 @@ def softmax_policy(alpha, v_x, act_dim):
 
     # logp_pi = tf.reduce_sum(tf.one_hot(mu, depth=act_dim) * pi_log, axis=1)  # use max Q(s,a)
     # logp_pi = tf.reduce_sum(tf.one_hot(pi, depth=act_dim) * pi_log, axis=1)
-    logp_pi = tf.reduce_sum(tf.exp(pi_log)*pi_log, axis=1)                     # exact entropy
+    logp_pi = tf.reduce_sum(tf.exp(pi_log) * pi_log, axis=1)  # exact entropy
 
     return mu, pi, logp_pi
 
@@ -178,19 +181,19 @@ Actor-Critics
 """
 
 
-def actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
+def actor_critic(x, x2, a, alpha, hidden_sizes, activation=tf.nn.relu,
                  output_activation=None,
                  use_bn=False, phase=True, coefficent_regularizer=0.0,
                  policy=softmax_policy, action_space=None, model="mlp"):
-
-    if x.shape[1] == 128:                # for Breakout-ram-v4
-        x = (x - 128.0) / 128.0          # x: shape(?,128)
+    if x.shape[1] == 128:  # for Breakout-ram-v4
+        x = (x - 128.0) / 128.0  # x: shape(?,128)
 
     act_dim = action_space.n
-    a_one_hot = tf.one_hot(a, depth=act_dim)      # shape(?,4)
-    #vfs
+    a_one_hot = tf.one_hot(a, depth=act_dim)  # shape(?,4)
+    # vfs
     if model == "mlp":
-        vf_model = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, use_bn=use_bn, phase=phase, coefficent_regularizer=coefficent_regularizer)     # return: shape(?,4)
+        vf_model = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, output_activation, use_bn=use_bn,
+                                 phase=phase, coefficent_regularizer=coefficent_regularizer)  # return: shape(?,4)
     else:
         vf_model = lambda x: nature_cnn(x)
     # Q1
@@ -236,5 +239,3 @@ def actor_critic(x, x2,  a, alpha, hidden_sizes, activation=tf.nn.relu,
 
     # shape(?,)
     return mu, pi, logp_pi, logp_pi_x2, q1, q2, q1_pi, q2_pi, q1_mu, q2_mu
-
-

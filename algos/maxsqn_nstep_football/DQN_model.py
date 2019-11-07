@@ -5,6 +5,7 @@ from ray.rllib.models.model import Model
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils import try_import_tf
 from ray.rllib.models.misc import normc_initializer, get_activation_fn
+
 tf = try_import_tf()
 
 
