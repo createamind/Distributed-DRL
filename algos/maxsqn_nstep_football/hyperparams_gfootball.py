@@ -92,12 +92,15 @@ class HyperParameters:
         self.game_difficulty = 1
         self.threshold_score = 6
 
+        self.epsilon = 0.4
+        self.epsilon_alpha = 7
+
         self.seed = 0
 
         cwd = os.getcwd()
 
         self.summary_dir = cwd + '/tboard_ray'  # Directory for storing tensorboard summary results
-        self.save_dir = cwd + '/' + self.exp_name    # Directory for storing trained model
+        self.save_dir = cwd + '/' + self.exp_name  # Directory for storing trained model
 
         self.log_dir = self.summary_dir + "/" + str(datetime.datetime.now()) + "-workers_num:" + \
                        str(self.num_workers) + "%" + str(self.a_l_ratio) + self.env_name + "-" + self.exp_name

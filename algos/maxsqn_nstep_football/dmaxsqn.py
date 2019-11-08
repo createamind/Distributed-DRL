@@ -183,6 +183,8 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
+    worker_epsilon = opt.epsilon**(1+worker_index/(opt.num_workers-1)*opt.epsilon_alpha)
+    print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
     while True:
         # ------ env set up ------
         # env = gym.make(opt.env_name)
@@ -224,7 +226,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         while using_difficulty == opt.game_difficulty:
             # don't need to random sample action if load weights from local.
             if t > opt.start_steps or opt.weights_file:
-                a = agent.get_action(o, deterministic=False)
+                if np.random.rand() > worker_epsilon:
+                    a = agent.get_action(o, deterministic=False)
+                else:
+                    a = env.action_space.sample()
             else:
                 a = env.action_space.sample()
                 t += 1
