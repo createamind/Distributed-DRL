@@ -284,7 +284,7 @@ class Actor(object):
         summary_str = self.sess.run(self.test_ops, feed_dict={
             self.test_vars[0]: sum(rew) / n,
             self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1),
-            self.test_vars[1]: self.opt.game_difficulty
+            self.test_vars[2]: self.opt.game_difficulty
         })
 
         self.writer.add_summary(summary_str, sample_times)
