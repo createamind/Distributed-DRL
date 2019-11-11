@@ -175,7 +175,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
-        # TODO
+        # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
         cnt += 1
@@ -185,6 +185,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 def worker_rollout(ps, replay_buffer, opt, worker_index):
     worker_epsilon = opt.epsilon**(1+worker_index/(opt.num_workers-1)*opt.epsilon_alpha)
     print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
+    local_epsilon = opt.epsilon
     while True:
         # ------ env set up ------
         # env = gym.make(opt.env_name)
@@ -224,6 +225,9 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
         # if current score lager than threshold score then game difficulty plus 0.05
         while using_difficulty == opt.game_difficulty:
+            if local_epsilon != opt.epsilon:
+                worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
+                local_epsilon = opt.epsilon
             # don't need to random sample action if load weights from local.
             if t > opt.start_steps or opt.weights_file:
                 if np.random.rand() > worker_epsilon:
@@ -309,6 +313,7 @@ def worker_test(ps, replay_buffer, opt):
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
 
     max_sample_times = 0
+    epsilon_score = 1
     while True:
 
         # ------ env set up ------
@@ -333,6 +338,9 @@ def worker_test(ps, replay_buffer, opt):
 
             ep_ret = agent.test(test_env, replay_buffer)
             current_ret = ep_ret
+            if current_ret > epsilon_score:
+                opt.epsilon -= 0.035
+                epsilon_score += 1
 
             sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
             time2 = time.time()

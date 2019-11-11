@@ -15,7 +15,7 @@ class HyperParameters:
 
         # "_random", "_d_True", ""
         self.rollout_env_name = self.env_name + "_random"
-        self.exp_name = str(exp_name)
+        self.exp_name = self.rollout_env_name
 
         self.with_checkpoints = False
 
