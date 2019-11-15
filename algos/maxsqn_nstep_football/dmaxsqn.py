@@ -22,10 +22,10 @@ import gfootball.env as football_env
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-# "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
-flags.DEFINE_string("env_name", "11_vs_11_stochastic", "game env")
+# "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
+flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 10, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -183,15 +183,22 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-    worker_epsilon = opt.epsilon**(1+worker_index/(opt.num_workers-1)*opt.epsilon_alpha)
-    print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
+    worker_epsilon = 0
+    if opt.epsilon != 0:
+        worker_epsilon = opt.epsilon**(1+worker_index/(opt.num_workers-1)*opt.epsilon_alpha)
+        print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
     local_epsilon = opt.epsilon
     while True:
         # ------ env set up ------
         # env = gym.make(opt.env_name)
-        using_difficulty = opt.game_difficulty
-        env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
-                                              stacked=opt.stacked, representation=opt.representation, render=False)
+        using_difficulty = 0
+        if opt.game_difficulty != 0:
+            using_difficulty = opt.game_difficulty
+            env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
+                                                  stacked=opt.stacked, representation=opt.representation, render=False)
+        else:
+            env = football_env.create_environment(env_name=opt.rollout_env_name,
+                                                  stacked=opt.stacked, representation=opt.representation, render=False)
         env = FootballWrapper(env)
         # ------ env set up end ------
 
@@ -225,9 +232,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
         # if current score lager than threshold score then game difficulty plus 0.05
         while using_difficulty == opt.game_difficulty:
-            if local_epsilon != opt.epsilon:
-                worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
-                local_epsilon = opt.epsilon
+            if opt.epsilon != 0:
+                if local_epsilon != opt.epsilon:
+                    worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
+                    local_epsilon = opt.epsilon
+
             # don't need to random sample action if load weights from local.
             if t > opt.start_steps or opt.weights_file:
                 if np.random.rand() > worker_epsilon:
@@ -323,11 +332,16 @@ def worker_test(ps, replay_buffer, opt):
     epsilon_score = 1
     while True:
 
-        # ------ env set up ------
-        test_env = football_env.create_environment(env_name=opt.env_name + '_' + str(opt.game_difficulty),
-                                                   stacked=opt.stacked, representation=opt.representation, render=False)
-        # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
-        opt.game_difficulty += 1
+        if opt.game_difficulty != 0:
+            # ------ env set up ------
+            test_env = football_env.create_environment(env_name=opt.env_name + '_' + str(opt.game_difficulty),
+                                                       stacked=opt.stacked, representation=opt.representation, render=False)
+            # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
+            opt.game_difficulty += 1
+        else:
+            test_env = football_env.create_environment(env_name=opt.env_name,
+                                                       stacked=opt.stacked, representation=opt.representation,
+                                                       render=False)
 
         current_ret = 0
 
@@ -345,7 +359,7 @@ def worker_test(ps, replay_buffer, opt):
 
             ep_ret = agent.test(test_env, replay_buffer)
             current_ret = ep_ret
-            if current_ret > epsilon_score:
+            if opt.epsilon != 0 and current_ret > epsilon_score:
                 opt.epsilon -= 0.035
                 epsilon_score += 1
 

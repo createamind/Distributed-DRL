@@ -11,11 +11,12 @@ class HyperParameters:
     def __init__(self, env_name, exp_name, num_workers, a_l_ratio, weights_file):
         # parameters set
 
-        self.env_name = env_name
+        self.exp_name = exp_name
 
+        self.env_name = env_name
         # "_random", "_d_True", ""
-        self.rollout_env_name = self.env_name + "_random"
-        self.exp_name = self.rollout_env_name
+        self.rollout_env_name = self.env_name + ""
+
 
         self.with_checkpoints = False
 
@@ -35,7 +36,7 @@ class HyperParameters:
             self.start_steps = int(10e6)
 
         # gpu memory fraction
-        self.gpu_fraction = 0.2
+        self.gpu_fraction = 0.5
 
         self.hidden_size = (300, 400, 300)
 
@@ -45,12 +46,6 @@ class HyperParameters:
         # env = FootballWrapper(env_football)
         env = env_football
 
-        scenario_obsdim = {'11_vs_11_easy_stochastic': 115,
-                           'academy_empty_goal': 32,
-                           'academy_empty_goal_random': 32,
-                           'academy_3_vs_1_with_keeper': 51,
-                           'academy_3_vs_1_with_keeper_random': 51,
-                           'academy_single_goal_versus_lazy': 108}
         # self.obs_dim = scenario_obsdim[self.env_name]
         self.obs_dim = env.observation_space.shape
         self.obs_space = Box(low=-1.0, high=1.0, shape=self.obs_dim, dtype=np.float32)
@@ -89,10 +84,10 @@ class HyperParameters:
         self.save_freq = 1
 
         self.max_ret = 0
-        self.game_difficulty = 1
-        self.threshold_score = 6
+        self.game_difficulty = 0
+        self.threshold_score = 96
 
-        self.epsilon = 0.4
+        self.epsilon = 0
         self.epsilon_alpha = 7
 
         self.seed = 0
@@ -124,13 +119,9 @@ class FootballWrapper(object):
         for _ in range(3):
             obs, reward, done, info = self._env.step(action)
 
-            if reward < 0.0:
-                done = True
-                reward = 0.0
-
             r += reward
 
             if done:
-                return obs, r * 200, done, info
+                return obs, r * 260, done, info
 
-        return obs, r * 200, done, info
+        return obs, r * 260, done, info
