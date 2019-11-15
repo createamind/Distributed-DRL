@@ -259,17 +259,24 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             else:
                 o_queue.append((o2,))
 
-            if t_queue % opt.Ln == 0:
+            # scheme 1:
+            if t_queue >= opt.Ln:
                 replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
 
-            if d and t_queue % opt.Ln != 0:
-                for _0 in range(opt.Ln - t_queue % opt.Ln):
-                    a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
-                    if opt.model == "cnn":
-                        o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)),))
-                    else:
-                        o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32),))
-                replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+            # scheme 2:
+            # if t_queue % opt.Ln == 0:
+            #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+            #
+            # if d and t_queue % opt.Ln != 0:
+            #     for _0 in range(opt.Ln - t_queue % opt.Ln):
+            #         a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
+            #         if opt.model == "cnn":
+            #             o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)),))
+            #         else:
+            #             o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32),))
+            #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+            ###
+
 
             t_queue += 1
 
