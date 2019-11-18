@@ -16,8 +16,8 @@ from ray.rllib.utils.compression import pack, unpack
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-# "Pendulum-v0" 'BipedalWalker-v2' 'LunarLanderContinuous-v2'
-flags.DEFINE_string("env_name", "11_vs_11_stochastic_random_1", "game env")
+# "Pendulum-v0" '11_vs_11_easy_stochastic' '11_vs_11_competition'
+flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 6, "number of workers")
@@ -33,15 +33,14 @@ opt.hidden_size = (300, 400, 300)
 
 agent = Actor(opt, job="test")
 keys, weights = agent.get_weights()
-pickle_in = open("RMax_weights.pickle", "rb")
-weights_all = pickle.load(pickle_in)
-
-weights = [weights_all[key] for key in keys]
+with open("GoodWeights/343/343E1.pickle", "rb") as pickle_in:
+    weights_all = pickle.load(pickle_in)
+    weights = [weights_all[key] for key in keys]
 
 agent.set_weights(keys, weights)
 
 test_env = football_env.create_environment(env_name=opt.env_name, stacked=opt.stacked,
-                                           representation=opt.representation, render=True)
+                                           representation=opt.representation, render=False)
 
 # test_env = FootballWrapper(test_env)
 n = 100
@@ -63,29 +62,3 @@ for j in range(1, n + 1):
     rew.append(ep_ret)
     print("ave test reward:", sum(rew) / j, j)
 print("ave test_reward:", sum(rew) / n)
-
-
-# reward wrapper
-class FootballWrapper(object):
-
-    def __init__(self, env):
-        self._env = env
-
-    def __getattr__(self, name):
-        return getattr(self._env, name)
-
-    def reset(self):
-        obs = self._env.reset()
-        return obs
-
-    def step(self, action):
-        r = 0.0
-        for _ in range(3):
-            obs, reward, done, info = self._env.step(action)
-
-            r += reward
-
-            if done:
-                return obs, r, done, info
-
-        return obs, r, done, info
