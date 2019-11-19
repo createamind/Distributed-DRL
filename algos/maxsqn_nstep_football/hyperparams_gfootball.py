@@ -17,7 +17,6 @@ class HyperParameters:
         # "_random", "_d_True", ""
         self.rollout_env_name = self.env_name + ""
 
-
         self.with_checkpoints = False
 
         self.model = "mlp"
@@ -59,7 +58,7 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.Ln = 3
+        self.Ln = 16
         self.use_max = False
         self.alpha = 0.1
         # self.alpha = "auto"
@@ -80,8 +79,11 @@ class HyperParameters:
         self.steps_per_epoch = 5000
         self.batch_size = 256
 
-        self.max_ep_len = 960
-        self.save_freq = 1
+        self.action_repeat = 3
+        self.reward_scale = 200
+        self.max_ep_len = 2900
+        # self.max_ep_len = 490
+        self.save_freq = 2
 
         self.max_ret = 0
         self.game_difficulty = 0
@@ -104,8 +106,10 @@ class HyperParameters:
 # reward wrapper
 class FootballWrapper(object):
 
-    def __init__(self, env):
+    def __init__(self, env, action_repeat, reward_scale):
         self._env = env
+        self.action_repeat = action_repeat
+        self.reward_scale = reward_scale
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -116,12 +120,12 @@ class FootballWrapper(object):
 
     def step(self, action):
         r = 0.0
-        for _ in range(3):
+        for _ in range(self.action_repeat):
             obs, reward, done, info = self._env.step(action)
 
             r += reward
 
             if done:
-                return obs, r * 260, done, info
+                return obs, r * self.reward_scale, done, info
 
-        return obs, r * 260, done, info
+        return obs, r * self.reward_scale, done, info
