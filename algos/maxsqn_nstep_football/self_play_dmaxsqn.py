@@ -363,7 +363,7 @@ def worker_test(ps, replay_buffer, opt):
     time0 = time1 = time.time()
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
 
-    max_sample_times = 0
+    max_steps = 0
     epsilon_score = 1
     while True:
 
@@ -413,12 +413,12 @@ def worker_test(ps, replay_buffer, opt):
                   time2 - time0)
             print("----------------------------------")
 
-            if sample_times2 // int(1e6) > max_sample_times:
-                pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3] + "M_weights.pickle", "wb")
+            if steps // int(1e6) > max_steps:
+                pickle_out = open(opt.save_dir + "/" + str(steps // int(1e6))[:3] + "M_weights.pickle", "wb")
                 pickle.dump(weights_all, pickle_out)
                 pickle_out.close()
                 print("****** Weights saved by time! ******")
-                max_sample_times = sample_times2 // int(1e6)
+                max_steps = steps // int(1e6)
 
             if ep_ret > opt.max_ret:
                 pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
