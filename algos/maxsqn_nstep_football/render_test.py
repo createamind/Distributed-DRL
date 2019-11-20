@@ -16,7 +16,7 @@ from ray.rllib.utils.compression import pack, unpack
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-# "Pendulum-v0" '11_vs_11_easy_stochastic' '11_vs_11_competition'
+# "1_vs_1_easy" '11_vs_11_easy_stochastic' '11_vs_11_competition'
 flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
@@ -32,12 +32,11 @@ opt.hidden_size = (300, 400, 300)
 # opt.hidden_size = (400, 300)
 
 agent = Actor(opt, job="test")
-keys, weights = agent.get_weights()
-with open("GoodWeights/343/343E1.pickle", "rb") as pickle_in:
+keys, _ = agent.get_weights()
+with open("./LN=5E1.pickle", "rb") as pickle_in:
     weights_all = pickle.load(pickle_in)
     weights = [weights_all[key] for key in keys]
-
-agent.set_weights(keys, weights)
+    agent.set_weights(keys, weights)
 
 test_env = football_env.create_environment(env_name=opt.env_name, stacked=opt.stacked,
                                            representation=opt.representation, render=False)
@@ -57,7 +56,7 @@ for j in range(1, n + 1):
         ep_ret += r
         ep_len += 1
 
-    # print("test reward:", ep_ret, ep_len)
+    print("test reward:", ep_ret, ep_len)
     # exit()
     rew.append(ep_ret)
     print("ave test reward:", sum(rew) / j, j)

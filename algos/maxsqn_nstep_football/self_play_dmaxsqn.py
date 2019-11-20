@@ -66,8 +66,6 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
-        self.steps += 1
-
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
         self.sample_times += 1
@@ -76,6 +74,9 @@ class ReplayBuffer:
                     acts=self.buffer_a[idxs],
                     rews=self.buffer_r[idxs],
                     done=self.buffer_d[idxs], )
+
+    def add_counts(self, episode_steps):
+        self.steps += episode_steps
 
     def get_counts(self):
         return self.sample_times, self.steps, self.size
@@ -150,7 +151,7 @@ class Cache(object):
         self.p1.terminate()
 
 
-@ray.remote(num_cpus=1, num_gpus=1, max_calls=1)
+@ray.remote(num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -185,7 +186,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 def worker_rollout(ps, replay_buffer, opt, worker_index):
     worker_epsilon = 0
     if opt.epsilon != 0:
-        worker_epsilon = opt.epsilon**(1+worker_index/(opt.num_workers-1)*opt.epsilon_alpha)
+        worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
         print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
     local_epsilon = opt.epsilon
     while True:
@@ -203,7 +204,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                                                   number_of_left_players_agent_controls=1,
                                                   number_of_right_players_agent_controls=1,
                                                   stacked=opt.stacked, representation=opt.representation, render=False)
-        env = FootballWrapper(env)
+        env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
         # ------ env set up end ------
 
         agent = Actor(opt, job="worker")
@@ -321,14 +322,15 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             #################################### deques store
 
             # End of episode. Training (ep_len times).
-            if d or (ep_len == opt.max_ep_len):
+            if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+                replay_buffer.add_counts.remote(ep_len * opt.action_repeat)
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
 
                 while sample_times > 0 and (steps - opt.start_steps) / sample_times > opt.a_l_ratio:
                     sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
                     time.sleep(0.1)
 
-                print('rollout_ep_len:', ep_len, 'rollout_ep_ret:', ep_ret)
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
 
                 if steps > opt.start_steps:
                     # update parameters every episode
@@ -391,20 +393,20 @@ def worker_test(ps, replay_buffer, opt):
 
             agent.set_weights(keys, weights)
 
+            sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
+            time2 = time.time()
+
             ep_ret = agent.test(test_env, replay_buffer)
             current_ret = ep_ret
             if opt.epsilon != 0 and current_ret > epsilon_score:
                 opt.epsilon -= 0.035
                 epsilon_score += 1
 
-            sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
-            time2 = time.time()
-
             print("----------------------------------")
             print("| test_reward:", ep_ret)
             print("| sample_times:", sample_times2)
+            # TODO
             print("| steps:", steps)
-            print("| env_steps:", steps * opt.Ln)
             print("| buffer_size:", size)
             print("| actual a_l_ratio:", str((steps - opt.start_steps) / (sample_times2 + 1))[:4])
             print('- update frequency:', (sample_times2 - sample_times1) / (time2 - time1), 'total time:',
