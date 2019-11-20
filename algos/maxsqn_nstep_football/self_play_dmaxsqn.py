@@ -275,7 +275,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # Ignore the "done" signal if it comes from hitting the time
             # horizon (that is, when it's an artificial terminal signal
             # that isn't based on the agent's state)
-            d = False if ep_len == opt.max_ep_len else d
+            # d = False if ep_len*opt.action_repeat >= opt.max_ep_len else d
 
             o = o2
 
@@ -290,7 +290,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             if opt.model == "cnn":
                 left_compressed_o2 = pack(left_o2)
                 left_o_queue.append((left_compressed_o2,))
-                right_compressed_o2 = pack(left_o2)
+                right_compressed_o2 = pack(right_o2)
                 right_o_queue.append((right_compressed_o2,))
             else:
                 left_o_queue.append((left_o2,))
@@ -298,7 +298,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # scheme 1:
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
-            if t_queue >= opt.Ln and t_queue % 2 == 0:
+            if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
                 replay_buffer.store.remote(left_o_queue, left_a_r_d_queue, worker_index)
                 replay_buffer.store.remote(right_o_queue, right_a_r_d_queue, worker_index)
 
@@ -315,7 +315,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             #             o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32),))
             #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
             ###
-
 
             t_queue += 1
 
@@ -371,7 +370,8 @@ def worker_test(ps, replay_buffer, opt):
         if opt.game_difficulty != 0:
             # ------ env set up ------
             test_env = football_env.create_environment(env_name=opt.env_name + '_' + str(opt.game_difficulty),
-                                                       stacked=opt.stacked, representation=opt.representation, render=False)
+                                                       stacked=opt.stacked, representation=opt.representation,
+                                                       render=False)
             # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
             opt.game_difficulty += 1
         else:
