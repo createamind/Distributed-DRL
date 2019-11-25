@@ -153,7 +153,7 @@ class Learner(object):
         batch_logp_pi = np.stack(logp_pi_s, axis=1)  # or np.swapaxes(np.array(entropy), 0, 1)
         return batch_logp_pi
 
-    def train(self, batch, replay_buffer, cnt):
+    def train(self, batch, cnt):
         batch_logp_pi = self.get_logp_pi(batch['obs'])
         feed_dict = {self.x_ph: batch['obs'][:, 0],
                      self.x2_ph: batch['obs'][:, -1],
@@ -165,7 +165,6 @@ class Learner(object):
 
         outs = self.sess.run(self.step_ops, feed_dict)
         if cnt % 300 == 0:
-            _, steps, _ = ray.get(replay_buffer.get_counts.remote())
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
@@ -175,7 +174,7 @@ class Learner(object):
                 self.train_vars[5]: outs[5],
             })
 
-            self.writer.add_summary(summary_str, steps)
+            self.writer.add_summary(summary_str, cnt)
             self.writer.flush()
 
     def compute_gradients(self, x, y):
@@ -288,7 +287,7 @@ class Actor(object):
             self.test_vars[2]: self.opt.game_difficulty-1
         })
 
-        self.writer.add_summary(summary_str, sample_times)
+        self.writer.add_summary(summary_str, steps)
         self.writer.flush()
         return sum(rew) / n
 

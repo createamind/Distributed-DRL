@@ -128,16 +128,16 @@ class Cache(object):
         self.replay_buffer = replay_buffer
         self.q1 = multiprocessing.Queue(10)
         self.q2 = multiprocessing.Queue(5)
-        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
+        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2))
         self.p1.daemon = True
 
-    def ps_update(self, q1, q2, replay_buffer):
+    def ps_update(self, q1, q2):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -167,7 +167,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         batch = cache.q1.get()
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
-        agent.train(batch, replay_buffer, cnt)
+        agent.train(batch, cnt)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
