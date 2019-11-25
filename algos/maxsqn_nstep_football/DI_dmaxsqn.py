@@ -162,20 +162,12 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
     cache.start()
 
-    # TODO
-    # def cleanup():
-    #     cache.end()
-    #     print("***********************multiprocessing terminated!***********************")
-    #
-    # import atexit
-    # atexit.register(cleanup)
-
     cnt = 1
     while True:
         batch = cache.q1.get()
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
-        agent.train(batch, cnt)
+        agent.train(batch, replay_buffer, cnt)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
@@ -327,7 +319,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
                 ################################## deques reset
 
-                if steps // int(1e6) > max_steps:
+                if sample_times // int(1e6) > max_steps:
                     mu += 0.05
                     max_steps += 1
                     break
