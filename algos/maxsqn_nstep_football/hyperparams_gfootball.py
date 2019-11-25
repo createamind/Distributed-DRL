@@ -58,7 +58,7 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.Ln = 16
+        self.Ln = 5
         self.use_max = False
         self.alpha = 0.1
         # self.alpha = "auto"
@@ -80,7 +80,7 @@ class HyperParameters:
         self.batch_size = 256
 
         self.action_repeat = 3
-        self.reward_scale = 200
+        self.reward_scale = 180
         self.max_ep_len = 2900
         # self.max_ep_len = 490
         self.save_freq = 1
