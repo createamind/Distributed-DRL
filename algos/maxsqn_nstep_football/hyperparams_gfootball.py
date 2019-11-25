@@ -83,10 +83,10 @@ class HyperParameters:
         self.reward_scale = 200
         self.max_ep_len = 2900
         # self.max_ep_len = 490
-        self.save_freq = 2
+        self.save_freq = 1
 
         self.max_ret = 0
-        self.game_difficulty = 0
+        self.game_difficulty = 1
         self.threshold_score = 96
 
         self.epsilon = 0
