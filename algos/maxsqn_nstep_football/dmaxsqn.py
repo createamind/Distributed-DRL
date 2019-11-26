@@ -128,16 +128,16 @@ class Cache(object):
         self.replay_buffer = replay_buffer
         self.q1 = multiprocessing.Queue(10)
         self.q2 = multiprocessing.Queue(5)
-        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
+        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2))
         self.p1.daemon = True
 
-    def ps_update(self, q1, q2, replay_buffer):
+    def ps_update(self, q1, q2):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -322,7 +322,7 @@ def worker_test(ps, replay_buffer, opt):
     time0 = time1 = time.time()
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
 
-    max_steps = 0
+    max_sample_times = 0
     epsilon_score = 1
     while True:
 
@@ -372,12 +372,12 @@ def worker_test(ps, replay_buffer, opt):
                   time2 - time0)
             print("----------------------------------")
 
-            if steps // int(1e6) > max_steps:
-                pickle_out = open(opt.save_dir + "/" + str(steps // int(1e6))[:3] + "M_weights.pickle", "wb")
+            if sample_times2 // int(1e6) > max_sample_times:
+                pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3] + "M_weights.pickle", "wb")
                 pickle.dump(weights_all, pickle_out)
                 pickle_out.close()
                 print("****** Weights saved by time! ******")
-                max_steps = steps // int(1e6)
+                max_sample_times = sample_times2 // int(1e6)
 
             if ep_ret > opt.max_ret:
                 pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")

@@ -37,16 +37,16 @@ class ReplayBuffer:
     A simple FIFO experience replay buffer for SQN_N_STEP agents.
     """
 
-    def __init__(self, Ln, obs_shape, act_shape, size):
-        self.obs_shape = obs_shape
-        if obs_shape != (115,):
-            self.buffer_o = np.array([['0' * 2000] * (Ln + 1)] * size, dtype=np.str)
+    def __init__(self, opt):
+        self.obs_shape = opt.o_shape
+        if self.obs_shape != (115,):
+            self.buffer_o = np.array([['0' * 2000] * (opt.Ln + 1)] * opt.replay_size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((size, Ln + 1) + obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((size, Ln) + act_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
-        self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
-        self.ptr, self.size, self.max_size = 0, 0, size
+            self.buffer_o = np.zeros((opt.replay_size, opt.Ln + 1) + opt.o_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((opt.replay_size, opt.Ln) + opt.a_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((opt.replay_size, opt.Ln), dtype=np.float32)
+        self.buffer_d = np.zeros((opt.replay_size, opt.Ln), dtype=np.float32)
+        self.ptr, self.size, self.max_size = 0, 0, opt.replay_size
         self.steps, self.sample_times = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
@@ -65,6 +65,7 @@ class ReplayBuffer:
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
+        self.steps += opt.action_repeat * opt.save_freq
 
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
@@ -74,9 +75,6 @@ class ReplayBuffer:
                     acts=self.buffer_a[idxs],
                     rews=self.buffer_r[idxs],
                     done=self.buffer_d[idxs], )
-
-    def add_counts(self, episode_steps):
-        self.steps += episode_steps
 
     def get_counts(self):
         return self.sample_times, self.steps, self.size
@@ -293,14 +291,13 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-                replay_buffer.add_counts.remote(ep_len * opt.action_repeat)
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-
                 while sample_times > 0 and (steps - opt.start_steps) / sample_times > opt.a_l_ratio:
                     sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
                     time.sleep(0.1)
 
-                print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
+                      'rollout_ep_ret:', ep_ret)
 
                 if steps > opt.start_steps:
                     # update parameters every episode
@@ -334,7 +331,7 @@ def worker_test(ps, replay_buffer, opt):
     time0 = time1 = time.time()
     sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
 
-    max_steps = 0
+    max_sample_times = 0
     epsilon_score = 1
     while True:
 
@@ -384,12 +381,12 @@ def worker_test(ps, replay_buffer, opt):
                   time2 - time0)
             print("----------------------------------")
 
-            if steps // int(1e6) > max_steps:
-                pickle_out = open(opt.save_dir + "/" + str(steps // int(1e6))[:3] + "M_weights.pickle", "wb")
+            if sample_times2 // int(1e6) > max_sample_times:
+                pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3] + "M_weights.pickle", "wb")
                 pickle.dump(weights_all, pickle_out)
                 pickle_out.close()
                 print("****** Weights saved by time! ******")
-                max_steps = steps // int(1e6)
+                max_sample_times = sample_times2 // int(1e6)
 
             if ep_ret > opt.max_ret:
                 pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
@@ -438,7 +435,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
+    replay_buffer = ReplayBuffer.remote(opt=opt)
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]

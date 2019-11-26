@@ -287,7 +287,7 @@ class Actor(object):
             self.test_vars[2]: self.opt.game_difficulty-1
         })
 
-        self.writer.add_summary(summary_str, steps)
+        self.writer.add_summary(summary_str, sample_times)
         self.writer.flush()
         return sum(rew) / n
 
