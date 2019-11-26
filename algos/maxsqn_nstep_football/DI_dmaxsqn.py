@@ -126,16 +126,16 @@ class Cache(object):
         self.replay_buffer = replay_buffer
         self.q1 = multiprocessing.Queue(10)
         self.q2 = multiprocessing.Queue(5)
-        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2))
+        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
         self.p1.daemon = True
 
-    def ps_update(self, q1, q2):
+    def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
 
             if not q2.empty():
                 keys, values = q2.get()

@@ -65,6 +65,7 @@ class ReplayBuffer:
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
+        self.steps += opt.action_repeat * opt.save_freq
 
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
@@ -74,9 +75,6 @@ class ReplayBuffer:
                     acts=self.buffer_a[idxs],
                     rews=self.buffer_r[idxs],
                     done=self.buffer_d[idxs], )
-
-    def add_counts(self, episode_steps):
-        self.steps += episode_steps
 
     def get_counts(self):
         return self.sample_times, self.steps, self.size
@@ -128,16 +126,16 @@ class Cache(object):
         self.replay_buffer = replay_buffer
         self.q1 = multiprocessing.Queue(10)
         self.q2 = multiprocessing.Queue(5)
-        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2))
+        self.p1 = multiprocessing.Process(target=self.ps_update, args=(self.q1, self.q2, self.replay_buffer))
         self.p1.daemon = True
 
-    def ps_update(self, q1, q2):
+    def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(self.replay_buffer.sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -286,9 +284,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-                replay_buffer.add_counts.remote(ep_len * opt.action_repeat)
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-
                 while sample_times > 0 and (steps - opt.start_steps) / sample_times > opt.a_l_ratio:
                     sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
                     time.sleep(0.1)
@@ -426,7 +422,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
+    replay_buffer = ReplayBuffer.remote(opt=opt)
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
