@@ -37,16 +37,16 @@ class ReplayBuffer:
     A simple FIFO experience replay buffer for SQN_N_STEP agents.
     """
 
-    def __init__(self, opt):
-        self.obs_shape = opt.o_shape
-        if self.obs_shape != (115,):
-            self.buffer_o = np.array([['0' * 2000] * (opt.Ln + 1)] * opt.replay_size, dtype=np.str)
+    def __init__(self, Ln, obs_shape, act_shape, size):
+        self.obs_shape = obs_shape
+        if obs_shape != (115,):
+            self.buffer_o = np.array([['0' * 2000] * (Ln + 1)] * size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((opt.replay_size, opt.Ln + 1) + opt.o_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((opt.replay_size, opt.Ln) + opt.a_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((opt.replay_size, opt.Ln), dtype=np.float32)
-        self.buffer_d = np.zeros((opt.replay_size, opt.Ln), dtype=np.float32)
-        self.ptr, self.size, self.max_size = 0, 0, opt.replay_size
+            self.buffer_o = np.zeros((size, Ln + 1) + obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((size, Ln) + act_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
+        self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
+        self.ptr, self.size, self.max_size = 0, 0, size
         self.steps, self.sample_times = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
@@ -65,7 +65,8 @@ class ReplayBuffer:
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
-        self.steps += opt.action_repeat * opt.save_freq
+
+        self.steps += 1
 
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
@@ -435,7 +436,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = ReplayBuffer.remote(opt=opt)
+    replay_buffer = ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]

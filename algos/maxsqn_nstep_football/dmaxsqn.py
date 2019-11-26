@@ -65,7 +65,8 @@ class ReplayBuffer:
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
-        self.steps += opt.action_repeat * opt.save_freq
+
+        self.steps += 1
 
     def sample_batch(self, batch_size):
         idxs = np.random.randint(0, self.size, size=batch_size)
@@ -422,7 +423,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = ReplayBuffer.remote(opt=opt)
+    replay_buffer = ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
