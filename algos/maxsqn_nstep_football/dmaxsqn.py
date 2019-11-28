@@ -337,8 +337,6 @@ def worker_test(ps, replay_buffer, opt):
 
         current_ret = 0
 
-        # test_env = FootballWrapper(test_env)
-
         # test_env = gym.make(opt.env_name)
         # ------ env set up end ------
 
