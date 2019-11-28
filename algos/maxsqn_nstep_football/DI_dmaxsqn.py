@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "11_vs_11_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 10, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -181,18 +181,19 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
     local_epsilon = opt.epsilon
 
-    max_steps = 0
+    filling_steps = 0
     mu, sigma = 0, 0.2
     while True:
         # ------ env set up ------
         # env = gym.make(opt.env_name)
 
         while True:
+            np.random.seed()
             s = np.random.normal(mu, sigma, 1)
             if 0 < s[0] < 1:
                 using_difficulty = int(s[0] // 0.05 + 1)
                 break
-        print(worker_index, "using difficulty:", using_difficulty)
+
         if opt.game_difficulty != 0:
             env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
                                                   stacked=opt.stacked, representation=opt.representation, render=False)
@@ -227,9 +228,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
-        # for t in range(total_steps):
-        t = 0
-
         while True:
             if opt.epsilon != 0:
                 if local_epsilon != opt.epsilon:
@@ -237,14 +235,14 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                     local_epsilon = opt.epsilon
 
             # don't need to random sample action if load weights from local.
-            if t > opt.start_steps or opt.weights_file:
+            if filling_steps > opt.start_steps or opt.weights_file:
                 if np.random.rand() > worker_epsilon:
                     a = agent.get_action(o, deterministic=False)
                 else:
                     a = env.action_space.sample()
             else:
                 a = env.action_space.sample()
-                t += 1
+                filling_steps += 1
             # Step the env
             o2, r, d, _ = env.step(a)
 
@@ -293,9 +291,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-                while sample_times > 0 and (steps - opt.start_steps) / sample_times > opt.a_l_ratio:
-                    sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-                    time.sleep(0.1)
 
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
@@ -305,22 +300,20 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                     weights = ray.get(ps.pull.remote(keys))
                     agent.set_weights(keys, weights)
 
-                o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+                # o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+                #
+                # ################################## deques reset
+                # t_queue = 1
+                # if opt.model == "cnn":
+                #     compressed_o = pack(o)
+                #     o_queue.append((compressed_o,))
+                # else:
+                #     o_queue.append((o,))
+                #
+                # ################################## deques reset
 
-                ################################## deques reset
-                t_queue = 1
-                if opt.model == "cnn":
-                    compressed_o = pack(o)
-                    o_queue.append((compressed_o,))
-                else:
-                    o_queue.append((o,))
-
-                ################################## deques reset
-
-                if sample_times // int(1e6) > max_steps:
-                    mu += 0.05
-                    max_steps += 1
-                    break
+                mu = sample_times / 20e6
+                break
 
 
 @ray.remote
@@ -454,6 +447,7 @@ if __name__ == '__main__':
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
+    time.sleep(10)
     while True:
         task_test = worker_test.remote(ps, replay_buffer, opt)
         ray.wait([task_test, ])
