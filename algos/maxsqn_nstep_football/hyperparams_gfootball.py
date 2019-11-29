@@ -35,7 +35,7 @@ class HyperParameters:
             self.start_steps = int(10e6)
 
         # gpu memory fraction
-        self.gpu_fraction = 0.5
+        self.gpu_fraction = 0.3
 
         self.hidden_size = (300, 400, 300)
 

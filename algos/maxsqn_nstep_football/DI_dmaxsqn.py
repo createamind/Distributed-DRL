@@ -312,7 +312,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 #
                 # ################################## deques reset
 
-                mu = sample_times / 20e6
+                mu = sample_times / 3e6
                 break
 
 
@@ -383,7 +383,7 @@ def worker_test(ps, replay_buffer, opt):
                 max_sample_times = sample_times2 // int(1e6)
 
             if ep_ret > opt.max_ret:
-                pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
+                pickle_out = open(opt.save_dir + "/" + str(ep_ret) + "Max_weights.pickle", "wb")
                 pickle.dump(weights_all, pickle_out)
                 pickle_out.close()
                 print("****** Weights saved by maxret! ******")
@@ -391,8 +391,6 @@ def worker_test(ps, replay_buffer, opt):
 
             time1 = time2
             sample_times1 = sample_times2
-
-            time.sleep(5)
 
 
 if __name__ == '__main__':
