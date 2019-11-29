@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "11_vs_11_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 12, "number of workers")
+flags.DEFINE_integer("num_workers", 16, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -133,10 +133,10 @@ class Cache(object):
     def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(3, 1)[0]].sample_batch.remote(opt.batch_size))))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(3, 1)[0]].sample_batch.remote(opt.batch_size))))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -157,22 +157,19 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     weights = ray.get(ps.pull.remote(keys))
     agent.set_weights(keys, weights)
 
-    # cache = Cache(replay_buffer)
-    #
-    # cache.start()
+    cache = Cache(replay_buffer)
+
+    cache.start()
 
     cnt = 1
     while True:
-        # batch = cache.q1.get()
-        batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
+        batch = cache.q1.get()
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
-            # cache.q2.put(agent.get_weights())
-            keys, values = agent.get_weights()
-            ps.push.remote(keys, values)
+            cache.q2.put(agent.get_weights())
         cnt += 1
 
 
@@ -272,10 +269,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
             # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                # replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
-                o_queue_id = ray.put(o_queue)
-                a_r_d_queue_id = ray.put(a_r_d_queue)
-                replay_buffer.store.remote(o_queue_id, a_r_d_queue_id, worker_index)
+                replay_buffer[np.random.choice(3, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
+                # o_queue_id = ray.put(o_queue)
+                # a_r_d_queue_id = ray.put(a_r_d_queue)
+                # replay_buffer.store.remote(o_queue_id, a_r_d_queue_id, worker_index)
 
             # scheme 2:
             # if t_queue % opt.Ln == 0:
@@ -298,7 +295,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 # TODO
-                sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
+                sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
@@ -333,7 +330,7 @@ def worker_test(ps, replay_buffer, opt):
     keys, weights = agent.get_weights()
 
     time0 = time1 = time.time()  # TODO
-    sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
+    sample_times1, steps, size = ray.get(replay_buffer[0].get_counts.remote())
 
     max_sample_times = 0
     epsilon_score = 1
@@ -365,10 +362,12 @@ def worker_test(ps, replay_buffer, opt):
 
             agent.set_weights(keys, weights)
 
-            sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
+            sample_times2, steps, size = ray.get(replay_buffer[0].get_counts.remote())
+            sample_times2 *= 3
+            steps *= 3
             time2 = time.time()
 
-            ep_ret = agent.test(test_env, replay_buffer)
+            ep_ret = agent.test(test_env, replay_buffer[np.random.choice(3, 1)[0]])
             current_ret = ep_ret
             if opt.epsilon != 0 and current_ret > epsilon_score:
                 opt.epsilon -= 0.035
@@ -437,7 +436,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
+    replay_buffer = [ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size//3) for i in range(3)]
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
@@ -447,9 +446,9 @@ if __name__ == '__main__':
     else:
         fill_steps = opt.start_steps
     # store at least start_steps in buffer before training
-    _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+    _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
     while steps < fill_steps:
-        _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+        _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
         print('fill steps before learn:', steps)
         time.sleep(1)
 
