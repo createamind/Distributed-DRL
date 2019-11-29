@@ -157,19 +157,22 @@ def worker_train(ps, replay_buffer, opt, learner_index):
     weights = ray.get(ps.pull.remote(keys))
     agent.set_weights(keys, weights)
 
-    cache = Cache(replay_buffer)
-
-    cache.start()
+    # cache = Cache(replay_buffer)
+    #
+    # cache.start()
 
     cnt = 1
     while True:
-        batch = cache.q1.get()
+        # batch = cache.q1.get()
+        batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
-            cache.q2.put(agent.get_weights())
+            # cache.q2.put(agent.get_weights())
+            keys, values = agent.get_weights()
+            ps.push.remote(keys, values)
         cnt += 1
 
 
@@ -269,7 +272,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
             # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+                # replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+                o_queue_id = ray.put(o_queue)
+                a_r_d_queue_id = ray.put(a_r_d_queue)
+                replay_buffer.store.remote(o_queue_id, a_r_d_queue_id, worker_index)
 
             # scheme 2:
             # if t_queue % opt.Ln == 0:
