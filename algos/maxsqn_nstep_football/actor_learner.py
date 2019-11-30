@@ -174,7 +174,6 @@ class Learner(object):
                 self.train_vars[1]: np.mean(outs[3]),
                 self.train_vars[2]: np.mean(outs[4]),
                 self.train_vars[3]: outs[5],
-                self.train_vars[4]: self.opt.mu,
             })
 
             self.writer.add_summary(summary_str, cnt)
@@ -201,12 +200,10 @@ class Learner(object):
         train_summaries.append(tf.summary.scalar("LogPi", LogPi))
         Alpha = tf.Variable(0.)
         train_summaries.append(tf.summary.scalar("Alpha", Alpha))
-        Mu = tf.Variable(0.)
-        train_summaries.append(tf.summary.scalar("Mu", Mu))
 
         train_ops = tf.summary.merge(train_summaries)
         # train_vars = [LossQ1, LossQ2, Q1Vals, Q2Vals, LogPi, Alpha]
-        train_vars = [Q1Vals, Q2Vals, LogPi, Alpha, Mu]
+        train_vars = [Q1Vals, Q2Vals, LogPi, Alpha]
         # train_vars = [LossQ1, LossQ2, Alpha]
 
         return train_ops, train_vars
