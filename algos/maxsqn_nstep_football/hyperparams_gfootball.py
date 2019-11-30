@@ -68,6 +68,8 @@ class HyperParameters:
         self.c_regularizer = 0.0
 
         self.gamma = 0.997
+
+        self.num_buffers = 1
         if self.model == 'cnn':
             self.replay_size = int(3e4)
         else:
@@ -98,6 +100,7 @@ class HyperParameters:
 
         self.summary_dir = cwd + '/tboard_ray'  # Directory for storing tensorboard summary results
         self.save_dir = cwd + '/' + self.exp_name  # Directory for storing trained model
+        self.save_interval = int(5e5)
 
         self.log_dir = self.summary_dir + "/" + str(datetime.datetime.now()) + "-workers_num:" + \
                        str(self.num_workers) + "%" + str(self.a_l_ratio) + self.env_name + "-" + self.exp_name

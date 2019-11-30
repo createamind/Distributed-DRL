@@ -114,9 +114,8 @@ class ParameterServer(object):
 
     # save weights to disk
     def save_weights(self, name):
-        pickle_out = open(name + "weights.pickle", "wb")
-        pickle.dump(self.weights, pickle_out)
-        pickle_out.close()
+        with open(name + "weights.pickle", "wb") as pickle_out:
+            pickle.dump(self.weights, pickle_out)
 
 
 class Cache(object):
@@ -149,7 +148,7 @@ class Cache(object):
     def end(self):
         self.p1.terminate()
 
-
+# TODO
 @ray.remote(num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
@@ -175,22 +174,13 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-    worker_epsilon = 0
-    if opt.epsilon != 0:
-        worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
-        print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
-    local_epsilon = opt.epsilon
+
+    filling_steps = 0
     while True:
         # ------ env set up ------
-        # env = gym.make(opt.env_name)
-        using_difficulty = 0
-        if opt.game_difficulty != 0:
-            using_difficulty = opt.game_difficulty
-            env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
-                                                  stacked=opt.stacked, representation=opt.representation, render=False)
-        else:
-            env = football_env.create_environment(env_name=opt.rollout_env_name,
-                                                  stacked=opt.stacked, representation=opt.representation, render=False)
+
+        env = football_env.create_environment(env_name=opt.rollout_env_name,
+                                              stacked=opt.stacked, representation=opt.representation, render=False)
         env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
         # ------ env set up end ------
 
@@ -215,29 +205,18 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             o_queue.append((o,))
 
         ################################## deques reset
-
+        # TODO
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
-        # for t in range(total_steps):
-        t = 0
-
-        # if current score lager than threshold score then game difficulty plus 0.05
-        while using_difficulty == opt.game_difficulty:
-            if opt.epsilon != 0:
-                if local_epsilon != opt.epsilon:
-                    worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
-                    local_epsilon = opt.epsilon
+        while True:
 
             # don't need to random sample action if load weights from local.
-            if t > opt.start_steps or opt.weights_file:
-                if np.random.rand() > worker_epsilon:
-                    a = agent.get_action(o, deterministic=False)
-                else:
-                    a = env.action_space.sample()
+            if filling_steps > opt.start_steps or opt.weights_file:
+                a = agent.get_action(o, deterministic=False)
             else:
                 a = env.action_space.sample()
-                t += 1
+                filling_steps += 1
             # Step the env
             o2, r, d, _ = env.step(a)
 
@@ -262,22 +241,9 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # scheme 1:
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
+            # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
                 replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
-
-            # scheme 2:
-            # if t_queue % opt.Ln == 0:
-            #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
-            #
-            # if d and t_queue % opt.Ln != 0:
-            #     for _0 in range(opt.Ln - t_queue % opt.Ln):
-            #         a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
-            #         if opt.model == "cnn":
-            #             o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)),))
-            #         else:
-            #             o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32),))
-            #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
-            ###
 
             t_queue += 1
 
@@ -285,10 +251,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+                # TODO
                 sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-                while sample_times > 0 and (steps - opt.start_steps) / sample_times > opt.a_l_ratio:
-                    sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-                    time.sleep(0.1)
 
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
 
@@ -314,77 +278,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 def worker_test(ps, replay_buffer, opt):
     agent = Actor(opt, job="main")
 
-    keys, weights = agent.get_weights()
+    test_env = football_env.create_environment(env_name=opt.env_name,
+                                               stacked=opt.stacked, representation=opt.representation,
+                                               render=False)
 
-    time0 = time1 = time.time()
-    sample_times1, steps, size = ray.get(replay_buffer.get_counts.remote())
-
-    max_sample_times = 0
-    epsilon_score = 1
-    while True:
-
-        if opt.game_difficulty != 0:
-            # ------ env set up ------
-            test_env = football_env.create_environment(env_name=opt.env_name + '_' + str(opt.game_difficulty),
-                                                       stacked=opt.stacked, representation=opt.representation,
-                                                       render=False)
-            # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
-            opt.game_difficulty += 1
-        else:
-            test_env = football_env.create_environment(env_name=opt.env_name,
-                                                       stacked=opt.stacked, representation=opt.representation,
-                                                       render=False)
-
-        current_ret = 0
-
-        # test_env = gym.make(opt.env_name)
-        # ------ env set up end ------
-
-        while current_ret < opt.threshold_score:
-            # weights_all for save it to local
-            weights_all = ray.get(ps.get_weights.remote())
-            weights = [weights_all[key] for key in keys]
-
-            agent.set_weights(keys, weights)
-
-            sample_times2, steps, size = ray.get(replay_buffer.get_counts.remote())
-            time2 = time.time()
-
-            ep_ret = agent.test(test_env, replay_buffer)
-            current_ret = ep_ret
-            if opt.epsilon != 0 and current_ret > epsilon_score:
-                opt.epsilon -= 0.035
-                epsilon_score += 1
-
-            print("----------------------------------")
-            print("| test_reward:", ep_ret)
-            print("| sample_times:", sample_times2)
-            # TODO
-            print("| steps:", steps)
-            print("| buffer_size:", size)
-            print("| actual a_l_ratio:", str((steps - opt.start_steps) / (sample_times2 + 1))[:4])
-            print('- update frequency:', (sample_times2 - sample_times1) / (time2 - time1), 'total time:',
-                  time2 - time0)
-            print("----------------------------------")
-
-            if sample_times2 // int(1e6) > max_sample_times:
-                pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3] + "M_weights.pickle", "wb")
-                pickle.dump(weights_all, pickle_out)
-                pickle_out.close()
-                print("****** Weights saved by time! ******")
-                max_sample_times = sample_times2 // int(1e6)
-
-            if ep_ret > opt.max_ret:
-                pickle_out = open(opt.save_dir + "/" + "Max_weights.pickle", "wb")
-                pickle.dump(weights_all, pickle_out)
-                pickle_out.close()
-                print("****** Weights saved by maxret! ******")
-                opt.max_ret = ep_ret
-
-            time1 = time2
-            sample_times1 = sample_times2
-
-            time.sleep(5)
+    agent.test(ps, replay_buffer, opt, test_env)
 
 
 if __name__ == '__main__':
@@ -439,6 +337,7 @@ if __name__ == '__main__':
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
+    time.sleep(10)
     while True:
         task_test = worker_test.remote(ps, replay_buffer, opt)
         ray.wait([task_test, ])

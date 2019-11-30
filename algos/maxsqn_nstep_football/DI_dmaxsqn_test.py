@@ -149,6 +149,7 @@ class Cache(object):
     def end(self):
         self.p1.terminate()
 
+
 # TODO
 @ray.remote(num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
@@ -300,7 +301,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
 
-                if steps > opt.start_steps: # TODO
+                if steps > opt.start_steps:  # TODO
                     # update parameters every episode
                     weights = ray.get(ps.pull.remote(keys))
                     agent.set_weights(keys, weights)
@@ -435,8 +436,11 @@ if __name__ == '__main__':
         all_keys, all_values = net.get_weights()
         ps = ParameterServer.remote(all_keys, all_values)
 
+    opt.num_buffers = FLAGS.num_workers // 20 + 1
+
     # Experience buffer
-    replay_buffer = [ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size//3) for i in range(3)]
+    replay_buffer = [ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape,
+                                         size=opt.replay_size // opt.num_buffers) for i in range(opt.num_buffers)]
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]

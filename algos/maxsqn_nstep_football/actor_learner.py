@@ -5,7 +5,9 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from numbers import Number
+import pickle
 
+import time
 import datetime
 import ray
 import ray.experimental.tf_utils
@@ -166,12 +168,13 @@ class Learner(object):
         outs = self.sess.run(self.step_ops, feed_dict)
         if cnt % 300 == 0:
             summary_str = self.sess.run(self.train_ops, feed_dict={
-                self.train_vars[0]: outs[0],
-                self.train_vars[1]: outs[1],
-                self.train_vars[2]: np.mean(outs[2]),
-                self.train_vars[3]: np.mean(outs[3]),
-                self.train_vars[4]: np.mean(outs[4]),
-                self.train_vars[5]: outs[5],
+                # self.train_vars[0]: outs[0],
+                # self.train_vars[1]: outs[1],
+                self.train_vars[0]: np.mean(outs[2]),
+                self.train_vars[1]: np.mean(outs[3]),
+                self.train_vars[2]: np.mean(outs[4]),
+                self.train_vars[3]: outs[5],
+                self.train_vars[4]: self.opt.mu,
             })
 
             self.writer.add_summary(summary_str, cnt)
@@ -186,10 +189,10 @@ class Learner(object):
     # Tensorflow Summary Ops
     def build_summaries(self):
         train_summaries = []
-        LossQ1 = tf.Variable(0.)
-        train_summaries.append(tf.summary.scalar("LossQ1", LossQ1))
-        LossQ2 = tf.Variable(0.)
-        train_summaries.append(tf.summary.scalar("LossQ2", LossQ2))
+        # LossQ1 = tf.Variable(0.)
+        # train_summaries.append(tf.summary.scalar("LossQ1", LossQ1))
+        # LossQ2 = tf.Variable(0.)
+        # train_summaries.append(tf.summary.scalar("LossQ2", LossQ2))
         Q1Vals = tf.Variable(0.)
         train_summaries.append(tf.summary.scalar("Q1Vals", Q1Vals))
         Q2Vals = tf.Variable(0.)
@@ -198,9 +201,12 @@ class Learner(object):
         train_summaries.append(tf.summary.scalar("LogPi", LogPi))
         Alpha = tf.Variable(0.)
         train_summaries.append(tf.summary.scalar("Alpha", Alpha))
+        Mu = tf.Variable(0.)
+        train_summaries.append(tf.summary.scalar("Mu", Mu))
 
         train_ops = tf.summary.merge(train_summaries)
-        train_vars = [LossQ1, LossQ2, Q1Vals, Q2Vals, LogPi, Alpha]
+        # train_vars = [LossQ1, LossQ2, Q1Vals, Q2Vals, LogPi, Alpha]
+        train_vars = [Q1Vals, Q2Vals, LogPi, Alpha, Mu]
         # train_vars = [LossQ1, LossQ2, Alpha]
 
         return train_ops, train_vars
@@ -268,39 +274,81 @@ class Actor(object):
         act_op = self.mu if deterministic else self.pi
         return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
 
-    def test(self, test_env, replay_buffer, n=50):
-        rew = []
-        for j in range(n):
-            o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-            while not d:
-                # Take deterministic actions at test time
-                o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
-                ep_ret += r
-                ep_len += 1
-            rew.append(ep_ret)
-            print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
+    def test(self, ps, replay_buffer, opt, test_env, n=50):
 
-        sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
-        summary_str = self.sess.run(self.test_ops, feed_dict={
-            self.test_vars[0]: sum(rew) / n,
-            self.test_vars[1]: (steps - self.opt.start_steps) / (sample_times + 1),
-            self.test_vars[2]: self.opt.game_difficulty-1
-        })
+        keys, _ = self.get_weights()
+        max_sample_times = 0
+        max_ret = 0
+        last_sample_times = 0
+        start_time = last_time = time.time()
 
-        self.writer.add_summary(summary_str, sample_times)
-        self.writer.flush()
-        return sum(rew) / n
+        while True:
+            # weights_all for save it to local
+            weights_all = ray.get(ps.get_weights.remote())
+            weights = [weights_all[key] for key in keys]
+
+            self.set_weights(keys, weights)
+
+            sample_times, steps, size = ray.get(replay_buffer.get_counts.remote())
+            time_now = time.time()
+            rew = []
+            for j in range(n):
+                o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
+                while not d:
+                    # Take deterministic actions at test time
+                    o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
+                    ep_ret += r
+                    ep_len += 1
+                rew.append(ep_ret)
+                print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
+
+            test_reward = sum(rew)/n
+            update_frequency = (sample_times - last_sample_times) / (time_now - last_time)
+            a_l_ratio = str((steps - opt.start_steps) / (sample_times + 1))[:4]
+
+            print("----------------------------------")
+            print("| test_reward:", test_reward)
+            print("| sample_times:", sample_times)
+            print("| steps:", steps)
+            print("| buffer_size:", size)
+            print("| actual a_l_ratio:", a_l_ratio)
+            print('- update frequency:', update_frequency, 'total time:', time_now - start_time)
+            print("----------------------------------")
+
+            if sample_times // opt.save_interval > max_sample_times:
+                with open(opt.save_dir + "/" + str(sample_times // opt.save_interval)[:3] + "M_weights.pickle", "wb") as pickle_out:
+                    pickle.dump(weights_all, pickle_out)
+                    print("****** Weights saved by time! ******")
+                max_sample_times = sample_times // opt.save_interval
+
+            if test_reward > max_ret:
+                with open(opt.save_dir + "/" + str(test_reward) + "Max_weights.pickle", "wb") as pickle_out:
+                    pickle.dump(weights_all, pickle_out)
+                    print("****** Weights saved by maxret! ******")
+                max_ret = test_reward
+
+            last_time = time_now
+            last_sample_times = sample_times
+
+            summary_str = self.sess.run(self.test_ops, feed_dict={
+                self.test_vars[0]: test_reward,
+                self.test_vars[1]: a_l_ratio,
+                self.test_vars[2]: update_frequency
+            })
+
+            self.writer.add_summary(summary_str, sample_times)
+            self.writer.flush()
 
     # Tensorflow Summary Ops
     def build_summaries(self):
         test_summaries = []
         episode_reward = tf.Variable(0.)
         a_l_ratio = tf.Variable(0.)
-        game_difficulty = tf.Variable(0.)
+        update_frequency = tf.Variable(0.)
         test_summaries.append(tf.summary.scalar("Reward", episode_reward))
         test_summaries.append(tf.summary.scalar("a_l_ratio", a_l_ratio))
-        test_summaries.append(tf.summary.scalar("current_game_difficulty", game_difficulty))
+        test_summaries.append(tf.summary.scalar("update_frequency", update_frequency))
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward, a_l_ratio, game_difficulty]
+        test_vars = [episode_reward, a_l_ratio, update_frequency]
 
         return test_ops, test_vars
