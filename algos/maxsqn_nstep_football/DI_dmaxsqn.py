@@ -37,23 +37,23 @@ class ReplayBuffer:
     A simple FIFO experience replay buffer for SQN_N_STEP agents.
     """
 
-    def __init__(self, Ln, obs_shape, act_shape, size):
-        self.obs_shape = obs_shape
-        if obs_shape != (115,):
-            self.buffer_o = np.array([['0' * 2000] * (Ln + 1)] * size, dtype=np.str)
+    def __init__(self, opt):
+        self.opt = opt
+        if opt.obs_shape != (115,):
+            self.buffer_o = np.array([['0' * 2000] * (opt.Ln + 1)] * opt.buffer_size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((size, Ln + 1) + obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((size, Ln) + act_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
-        self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
-        self.ptr, self.size, self.max_size = 0, 0, size
+            self.buffer_o = np.zeros((opt.buffer_size, opt.Ln + 1) + opt.obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((opt.buffer_size, opt.Ln) + opt.act_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
+        self.buffer_d = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
+        self.ptr, self.size, self.max_size = 0, 0, opt.buffer_size
         self.steps, self.sample_times = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
 
         obs, = np.stack(o_queue, axis=1)
 
-        if self.obs_shape != (115,):
+        if opt.obs_shape != (115,):
             self.buffer_o[self.ptr] = obs
         else:
             self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
@@ -67,9 +67,10 @@ class ReplayBuffer:
         self.size = min(self.size + 1, self.max_size)
 
         self.steps += 1
+        # self.steps += opt.Ln * opt.action_repeat
 
-    def sample_batch(self, batch_size):
-        idxs = np.random.randint(0, self.size, size=batch_size)
+    def sample_batch(self):
+        idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
         self.sample_times += 1
 
         return dict(obs=self.buffer_o[idxs],
@@ -132,10 +133,10 @@ class Cache(object):
     def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote())))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote())))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -337,7 +338,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape, size=opt.replay_size)
+    replay_buffer = [ReplayBuffer.remote(opt)]
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
@@ -347,9 +348,9 @@ if __name__ == '__main__':
     else:
         fill_steps = opt.start_steps
     # store at least start_steps in buffer before training
-    _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+    _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
     while steps < fill_steps:
-        _, steps, _ = ray.get(replay_buffer.get_counts.remote())
+        _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
         print('fill steps before learn:', steps)
         time.sleep(1)
 

@@ -37,23 +37,23 @@ class ReplayBuffer:
     A simple FIFO experience replay buffer for SQN_N_STEP agents.
     """
 
-    def __init__(self, Ln, obs_shape, act_shape, size):
-        self.obs_shape = obs_shape
-        if obs_shape != (115,):
-            self.buffer_o = np.array([['0' * 2000] * (Ln + 1)] * size, dtype=np.str)
+    def __init__(self, opt):
+        self.opt = opt
+        if opt.obs_shape != (115,):
+            self.buffer_o = np.array([['0' * 2000] * (opt.Ln + 1)] * opt.buffer_size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((size, Ln + 1) + obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((size, Ln) + act_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((size, Ln), dtype=np.float32)
-        self.buffer_d = np.zeros((size, Ln), dtype=np.float32)
-        self.ptr, self.size, self.max_size = 0, 0, size
+            self.buffer_o = np.zeros((opt.buffer_size, opt.Ln + 1) + opt.obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((opt.buffer_size, opt.Ln) + opt.act_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
+        self.buffer_d = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
+        self.ptr, self.size, self.max_size = 0, 0, opt.buffer_size
         self.steps, self.sample_times = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
 
         obs, = np.stack(o_queue, axis=1)
 
-        if self.obs_shape != (115,):
+        if opt.obs_shape != (115,):
             self.buffer_o[self.ptr] = obs
         else:
             self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
@@ -65,12 +65,14 @@ class ReplayBuffer:
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
+        # TODO
+        self.steps += 1 * opt.num_buffers
+        # self.steps += opt.Ln * opt.action_repeat
 
-        self.steps += 1
-
-    def sample_batch(self, batch_size):
-        idxs = np.random.randint(0, self.size, size=batch_size)
-        self.sample_times += 1
+    def sample_batch(self):
+        idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
+        # TODO
+        self.sample_times += 1 * opt.num_buffers
 
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
@@ -114,9 +116,8 @@ class ParameterServer(object):
 
     # save weights to disk
     def save_weights(self, name):
-        pickle_out = open(name + "weights.pickle", "wb")
-        pickle.dump(self.weights, pickle_out)
-        pickle_out.close()
+        with open(name + "weights.pickle", "wb") as pickle_out:
+            pickle.dump(self.weights, pickle_out)
 
 
 class Cache(object):
@@ -133,10 +134,10 @@ class Cache(object):
     def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(3, 1)[0]].sample_batch.remote(opt.batch_size))))
+        q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(3, 1)[0]].sample_batch.remote(opt.batch_size))))
+            q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -176,17 +177,11 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-    worker_epsilon = 0
-    if opt.epsilon != 0:
-        worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
-        print("worker_index:", worker_index, "worker_epsilon:", worker_epsilon)
-    local_epsilon = opt.epsilon
 
     filling_steps = 0
     mu, sigma = 0, 0.2
     while True:
         # ------ env set up ------
-        # env = gym.make(opt.env_name)
 
         while True:
             np.random.seed()
@@ -230,17 +225,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         agent.set_weights(keys, weights)
 
         while True:
-            if opt.epsilon != 0:
-                if local_epsilon != opt.epsilon:
-                    worker_epsilon = opt.epsilon ** (1 + worker_index / (opt.num_workers - 1) * opt.epsilon_alpha)
-                    local_epsilon = opt.epsilon
 
             # don't need to random sample action if load weights from local.
             if filling_steps > opt.start_steps or opt.weights_file:
-                if np.random.rand() > worker_epsilon:
-                    a = agent.get_action(o, deterministic=False)
-                else:
-                    a = env.action_space.sample()
+                a = agent.get_action(o, deterministic=False)
             else:
                 a = env.action_space.sample()
                 filling_steps += 1
@@ -270,24 +258,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
             # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer[np.random.choice(3, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
                 # o_queue_id = ray.put(o_queue)
                 # a_r_d_queue_id = ray.put(a_r_d_queue)
                 # replay_buffer.store.remote(o_queue_id, a_r_d_queue_id, worker_index)
-
-            # scheme 2:
-            # if t_queue % opt.Ln == 0:
-            #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
-            #
-            # if d and t_queue % opt.Ln != 0:
-            #     for _0 in range(opt.Ln - t_queue % opt.Ln):
-            #         a_r_d_queue.append((np.zeros(opt.a_shape, dtype=np.float32), 0.0, True,))
-            #         if opt.model == "cnn":
-            #             o_queue.append((pack(np.zeros(opt.obs_dim, dtype=np.float32)),))
-            #         else:
-            #             o_queue.append((np.zeros(opt.obs_dim, dtype=np.float32),))
-            #     replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
-            ###
 
             t_queue += 1
 
@@ -328,79 +302,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 def worker_test(ps, replay_buffer, opt):
     agent = Actor(opt, job="main")
 
-    keys, weights = agent.get_weights()
+    test_env = football_env.create_environment(env_name=opt.env_name,
+                                               stacked=opt.stacked, representation=opt.representation,
+                                               render=False)
 
-    time0 = time1 = time.time()  # TODO
-    sample_times1, steps, size = ray.get(replay_buffer[0].get_counts.remote())
-
-    max_sample_times = 0
-    epsilon_score = 1
-    while True:
-
-        if opt.game_difficulty != 0:
-            # ------ env set up ------
-            test_env = football_env.create_environment(env_name=opt.env_name + '_' + str(opt.game_difficulty),
-                                                       stacked=opt.stacked, representation=opt.representation,
-                                                       render=False)
-            # game_difficulty == 1 mean 0.05, 2 mean 0.1, 3 mean 0.15 ...
-            # opt.game_difficulty += 1
-        else:
-            test_env = football_env.create_environment(env_name=opt.env_name,
-                                                       stacked=opt.stacked, representation=opt.representation,
-                                                       render=False)
-
-        current_ret = 0
-
-        # test_env = FootballWrapper(test_env)
-
-        # test_env = gym.make(opt.env_name)
-        # ------ env set up end ------
-
-        while current_ret < opt.threshold_score:
-            # weights_all for save it to local # TODO
-            weights_all = ray.get(ps.get_weights.remote())
-            weights = [weights_all[key] for key in keys]
-
-            agent.set_weights(keys, weights)
-
-            sample_times2, steps, size = ray.get(replay_buffer[0].get_counts.remote())
-            sample_times2 *= 3
-            steps *= 3
-            time2 = time.time()
-
-            ep_ret = agent.test(test_env, replay_buffer[np.random.choice(3, 1)[0]])
-            current_ret = ep_ret
-            if opt.epsilon != 0 and current_ret > epsilon_score:
-                opt.epsilon -= 0.035
-                epsilon_score += 1
-
-            print("----------------------------------")
-            print("| test_reward:", ep_ret)
-            print("| sample_times:", sample_times2)
-            # TODO
-            print("| steps:", steps)
-            print("| buffer_size:", size)
-            print("| actual a_l_ratio:", str((steps - opt.start_steps) / (sample_times2 + 1))[:4])
-            print('- update frequency:', (sample_times2 - sample_times1) / (time2 - time1), 'total time:',
-                  time2 - time0)
-            print("----------------------------------")
-
-            if sample_times2 // int(1e6) > max_sample_times:
-                pickle_out = open(opt.save_dir + "/" + str(sample_times2 // int(1e6))[:3] + "M_weights.pickle", "wb")
-                pickle.dump(weights_all, pickle_out)
-                pickle_out.close()
-                print("****** Weights saved by time! ******")
-                max_sample_times = sample_times2 // int(1e6)
-
-            if ep_ret > opt.max_ret:
-                pickle_out = open(opt.save_dir + "/" + str(ep_ret) + "Max_weights.pickle", "wb")
-                pickle.dump(weights_all, pickle_out)
-                pickle_out.close()
-                print("****** Weights saved by maxret! ******")
-                opt.max_ret = ep_ret
-
-            time1 = time2
-            sample_times1 = sample_times2
+    agent.test(ps, replay_buffer, opt, test_env)
 
 
 if __name__ == '__main__':
@@ -436,11 +342,8 @@ if __name__ == '__main__':
         all_keys, all_values = net.get_weights()
         ps = ParameterServer.remote(all_keys, all_values)
 
-    opt.num_buffers = FLAGS.num_workers // 20 + 1
-
     # Experience buffer
-    replay_buffer = [ReplayBuffer.remote(Ln=opt.Ln, obs_shape=opt.o_shape, act_shape=opt.a_shape,
-                                         size=opt.replay_size // opt.num_buffers) for i in range(opt.num_buffers)]
+    replay_buffer = [ReplayBuffer.remote(opt) for i in range(opt.num_buffers)]
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]

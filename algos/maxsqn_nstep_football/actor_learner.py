@@ -25,7 +25,7 @@ class Learner(object):
             np.random.seed(opt.seed)
 
             # Inputs to computation graph
-            self.x_ph, self.a_ph, self.x2_ph = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
+            self.x_ph, self.a_ph, self.x2_ph = core.placeholders(opt.obs_shape, opt.act_shape, opt.obs_shape)
             self.r_ph, self.d_ph, self.logp_pi_ph = core.placeholders((opt.Ln,), (opt.Ln,), (opt.Ln,))
 
             # ------
@@ -217,7 +217,7 @@ class Actor(object):
             np.random.seed(opt.seed)
 
             # Inputs to computation graph
-            self.x_ph, self.a_ph, self.x2_ph, = core.placeholders(opt.o_shape, opt.a_shape, opt.o_shape)
+            self.x_ph, self.a_ph, self.x2_ph, = core.placeholders(opt.obs_shape, opt.act_shape, opt.obs_shape)
 
             # ------
             if opt.alpha == 'auto':
@@ -285,8 +285,8 @@ class Actor(object):
             weights = [weights_all[key] for key in keys]
 
             self.set_weights(keys, weights)
-
-            sample_times, steps, size = ray.get(replay_buffer.get_counts.remote())
+            # TODO
+            sample_times, steps, size = ray.get(replay_buffer[0].get_counts.remote())
             time_now = time.time()
             rew = []
             for j in range(n):

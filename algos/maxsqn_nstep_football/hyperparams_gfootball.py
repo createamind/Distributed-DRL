@@ -45,15 +45,14 @@ class HyperParameters:
         # env = FootballWrapper(env_football)
         env = env_football
 
-        # self.obs_dim = scenario_obsdim[self.env_name]
+        # self.obs_space = Box(low=-1.0, high=1.0, shape=self.obs_dim, dtype=np.float32)
         self.obs_dim = env.observation_space.shape
-        self.obs_space = Box(low=-1.0, high=1.0, shape=self.obs_dim, dtype=np.float32)
-
-        self.o_shape = self.obs_space.shape
+        self.obs_space = env.observation_space
+        self.obs_shape = self.obs_space.shape
 
         self.act_dim = env.action_space.n
         self.act_space = env.action_space
-        self.a_shape = self.act_space.shape
+        self.act_shape = self.act_space.shape
 
         self.num_workers = num_workers
         self.num_learners = 1
@@ -69,11 +68,14 @@ class HyperParameters:
 
         self.gamma = 0.997
 
-        self.num_buffers = 1
+        # self.num_buffers = 1
+        self.num_buffers = self.num_workers // 25 + 1
         if self.model == 'cnn':
-            self.replay_size = int(3e4)
+            self.buffer_size = int(3e4)
         else:
-            self.replay_size = int(3e6)
+            self.buffer_size = int(3e6)
+
+        self.buffer_size = self.buffer_size // self.num_buffers
 
         self.lr = 5e-5
         self.polyak = 0.995
