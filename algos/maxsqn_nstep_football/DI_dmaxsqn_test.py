@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "11_vs_11_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 16, "number of workers")
+flags.DEFINE_integer("num_workers", 12, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -137,7 +137,8 @@ class Cache(object):
         q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
+            if len(q1) < 10:
+                q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -149,7 +150,6 @@ class Cache(object):
 
     def end(self):
         self.p1.terminate()
-
 
 # TODO
 @ray.remote(num_gpus=1, max_calls=1)
@@ -259,9 +259,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
                 replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
-                # o_queue_id = ray.put(o_queue)
-                # a_r_d_queue_id = ray.put(a_r_d_queue)
-                # replay_buffer.store.remote(o_queue_id, a_r_d_queue_id, worker_index)
 
             t_queue += 1
 

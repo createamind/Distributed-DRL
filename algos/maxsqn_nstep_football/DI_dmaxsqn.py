@@ -65,13 +65,14 @@ class ReplayBuffer:
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
-
-        self.steps += 1
+        # TODO
+        self.steps += 1 * opt.num_buffers
         # self.steps += opt.Ln * opt.action_repeat
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
-        self.sample_times += 1
+        # TODO
+        self.sample_times += 1 * opt.num_buffers
 
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
@@ -133,10 +134,11 @@ class Cache(object):
     def ps_update(self, q1, q2, replay_buffer):
         print('os.pid of put_data():', os.getpid())
 
-        q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote())))
+        q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            q1.put(copy.deepcopy(ray.get(replay_buffer.sample_batch.remote())))
+            if len(q1) < 10:
+                q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -256,7 +258,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
             # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer.store.remote(o_queue, a_r_d_queue, worker_index)
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
 
             t_queue += 1
 
@@ -265,12 +267,12 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 # TODO
-                sample_times, steps, _ = ray.get(replay_buffer.get_counts.remote())
+                sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
 
-                if steps > opt.start_steps: # TODO
+                if steps > opt.start_steps:  # TODO
                     # update parameters every episode
                     weights = ray.get(ps.pull.remote(keys))
                     agent.set_weights(keys, weights)
@@ -338,7 +340,7 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
-    replay_buffer = [ReplayBuffer.remote(opt)]
+    replay_buffer = [ReplayBuffer.remote(opt) for i in range(opt.num_buffers)]
 
     # Start some training tasks.
     task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
