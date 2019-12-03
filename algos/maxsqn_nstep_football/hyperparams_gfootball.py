@@ -17,8 +17,6 @@ class HyperParameters:
         # "_random", "_d_True", ""
         self.rollout_env_name = self.env_name + ""
 
-        self.with_checkpoints = False
-
         self.model = "mlp"
         assert self.model in ["mlp", "cnn"], "model must be mlp or cnn!"
         if self.model == "cnn":
@@ -57,7 +55,6 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.Ln = 5
         self.use_max = False
         self.alpha = 0.1
         # self.alpha = "auto"
@@ -83,13 +80,14 @@ class HyperParameters:
         self.steps_per_epoch = 5000
         self.batch_size = 256
 
+        self.Ln = 5
         self.action_repeat = 3
         self.reward_scale = 180
         self.max_ep_len = 2900
-        # self.max_ep_len = 490
         self.save_freq = 1
 
         self.max_ret = 0
+        self.mu_speed = 3e6
         self.game_difficulty = 1
         self.threshold_score = 96
 

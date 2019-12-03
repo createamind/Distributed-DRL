@@ -25,13 +25,13 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "1_vs_1_easy", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 16, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
 
 
-@ray.remote
+@ray.remote(num_cpus=2)
 class ReplayBuffer:
     """
     A simple FIFO experience replay buffer for SQN_N_STEP agents.
@@ -137,7 +137,7 @@ class Cache(object):
         q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            if len(q1) < 10:
+            if q1.qsize() < 10:
                 q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
             if not q2.empty():
@@ -152,7 +152,7 @@ class Cache(object):
         self.p1.terminate()
 
 # TODO
-@ray.remote(num_gpus=1, max_calls=1)
+@ray.remote(num_cpus=2, num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -322,10 +322,16 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
+    # Methods called on different actors can execute in parallel,
+    # and methods called on the same actor are executed serially in the order that they are called.
+    # we need more buffer for more workers to keep high store speed.
     replay_buffer = [ReplayBuffer.remote(opt) for i in range(opt.num_buffers)]
 
     # Start some training tasks.
-    task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
+    for i in range(FLAGS.num_workers):
+        worker_rollout.remote(ps, replay_buffer, opt, i)
+        time.sleep(0.05)
+    # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if opt.weights_file:
         fill_steps = opt.start_steps / 100

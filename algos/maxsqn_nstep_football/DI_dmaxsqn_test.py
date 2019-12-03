@@ -31,7 +31,7 @@ flags.DEFINE_string("weights_file", "", "empty means False. "
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
 
 
-@ray.remote
+@ray.remote(num_cpus=2)
 class ReplayBuffer:
     """
     A simple FIFO experience replay buffer for SQN_N_STEP agents.
@@ -137,7 +137,7 @@ class Cache(object):
         q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            if len(q1) < 10:
+            if q1.qsize() < 10:
                 q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
             if not q2.empty():
@@ -152,7 +152,7 @@ class Cache(object):
         self.p1.terminate()
 
 # TODO
-@ray.remote(num_gpus=1, max_calls=1)
+@ray.remote(num_cpus=2, num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -272,7 +272,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
 
-                if steps > opt.start_steps:  # TODO
+                if steps > opt.start_steps:
                     # update parameters every episode
                     weights = ray.get(ps.pull.remote(keys))
                     agent.set_weights(keys, weights)
@@ -289,7 +289,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 #
                 # ################################## deques reset
                 if mu < 1:
-                    mu = sample_times / 3e6
+                    mu = sample_times / opt.mu_speed
                 else:
                     mu = 1
                 break
@@ -343,7 +343,10 @@ if __name__ == '__main__':
     replay_buffer = [ReplayBuffer.remote(opt) for i in range(opt.num_buffers)]
 
     # Start some training tasks.
-    task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
+    for i in range(FLAGS.num_workers):
+        worker_rollout.remote(ps, replay_buffer, opt, i)
+        time.sleep(0.05)
+    # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if opt.weights_file:
         fill_steps = opt.start_steps / 100
