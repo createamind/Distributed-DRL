@@ -299,7 +299,7 @@ class Actor(object):
                 rew.append(ep_ret)
                 print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
-            test_reward = sum(rew)/n
+            test_reward = sum(rew) / n
             update_frequency = (sample_times - last_sample_times) / (time_now - last_time)
             a_l_ratio = str((steps - opt.start_steps) / (sample_times + 1))[:4]
 
@@ -313,13 +313,15 @@ class Actor(object):
             print("----------------------------------")
 
             if sample_times // opt.save_interval > max_sample_times:
-                with open(opt.save_dir + "/" + str(sample_times // opt.save_interval)[:3] + "M_weights.pickle", "wb") as pickle_out:
+                with open(opt.save_dir + "/" + str(sample_times / 1e6) + "M_" + str(
+                        test_reward) + "_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by time! ******")
                 max_sample_times = sample_times // opt.save_interval
 
             if test_reward > max_ret:
-                with open(opt.save_dir + "/" + str(test_reward) + "Max_weights.pickle", "wb") as pickle_out:
+                with open(opt.save_dir + "/" + str(sample_times / 1e6) + "M_" + str(
+                        test_reward) + "Max_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by maxret! ******")
                 max_ret = test_reward

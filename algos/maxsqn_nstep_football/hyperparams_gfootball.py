@@ -80,8 +80,8 @@ class HyperParameters:
         self.steps_per_epoch = 5000
         self.batch_size = 256
 
-        self.Ln = 5
-        self.action_repeat = 3
+        self.Ln = 8
+        self.action_repeat = 2
         self.reward_scale = 180
         self.max_ep_len = 2900
         self.save_freq = 1

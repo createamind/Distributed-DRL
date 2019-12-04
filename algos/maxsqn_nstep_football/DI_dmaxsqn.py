@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "11_vs_11_stochastic", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 12, "number of workers")
+flags.DEFINE_integer("num_workers", 25, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -53,7 +53,7 @@ class ReplayBuffer:
 
         obs, = np.stack(o_queue, axis=1)
 
-        if opt.obs_shape != (115,):
+        if self.opt.obs_shape != (115,):
             self.buffer_o[self.ptr] = obs
         else:
             self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
@@ -66,13 +66,13 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         # TODO
-        self.steps += 1 * opt.num_buffers
+        self.steps += 1 * self.opt.num_buffers
         # self.steps += opt.Ln * opt.action_repeat
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
         # TODO
-        self.sample_times += 1 * opt.num_buffers
+        self.sample_times += 1 * self.opt.num_buffers
 
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
@@ -178,6 +178,9 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
 
+    agent = Actor(opt, job="worker")
+    keys = agent.get_weights()[0]
+
     filling_steps = 0
     mu, sigma = 0, 0.2
     while True:
@@ -190,17 +193,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 using_difficulty = int(s[0] // 0.05 + 1)
                 break
 
-        if opt.game_difficulty != 0:
-            env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
-                                                  stacked=opt.stacked, representation=opt.representation, render=False)
-        else:
-            env = football_env.create_environment(env_name=opt.rollout_env_name,
-                                                  stacked=opt.stacked, representation=opt.representation, render=False)
+        env = football_env.create_environment(env_name=opt.rollout_env_name + '_' + str(using_difficulty),
+                                              stacked=opt.stacked, representation=opt.representation, render=False)
+
         env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
         # ------ env set up end ------
-
-        agent = Actor(opt, job="worker")
-        keys = agent.get_weights()[0]
 
         ################################## deques
 
@@ -220,7 +217,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             o_queue.append((o,))
 
         ################################## deques reset
-        # TODO
+
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
@@ -272,10 +269,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
 
-                if steps > opt.start_steps:
-                    # update parameters every episode
-                    weights = ray.get(ps.pull.remote(keys))
-                    agent.set_weights(keys, weights)
+                # if steps > opt.start_steps:
+                #     # update parameters every episode
+                #     weights = ray.get(ps.pull.remote(keys))
+                #     agent.set_weights(keys, weights)
 
                 # o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
                 #
@@ -340,6 +337,9 @@ if __name__ == '__main__':
         ps = ParameterServer.remote(all_keys, all_values)
 
     # Experience buffer
+    # Methods called on different actors can execute in parallel,
+    # and methods called on the same actor are executed serially in the order that they are called.
+    # we need more buffer for more workers to keep high store speed.
     replay_buffer = [ReplayBuffer.remote(opt) for i in range(opt.num_buffers)]
 
     # Start some training tasks.

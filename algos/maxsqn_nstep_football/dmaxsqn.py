@@ -53,7 +53,7 @@ class ReplayBuffer:
 
         obs, = np.stack(o_queue, axis=1)
 
-        if opt.obs_shape != (115,):
+        if self.opt.obs_shape != (115,):
             self.buffer_o[self.ptr] = obs
         else:
             self.buffer_o[self.ptr] = np.array(list(obs), dtype=np.float32)
@@ -66,13 +66,13 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         # TODO
-        self.steps += 1 * opt.num_buffers
+        self.steps += 1 * self.opt.num_buffers
         # self.steps += opt.Ln * opt.action_repeat
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
         # TODO
-        self.sample_times += 1 * opt.num_buffers
+        self.sample_times += 1 * self.opt.num_buffers
 
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
@@ -178,6 +178,9 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
 
+    agent = Actor(opt, job="worker")
+    keys = agent.get_weights()[0]
+
     filling_steps = 0
     while True:
         # ------ env set up ------
@@ -186,9 +189,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                                               stacked=opt.stacked, representation=opt.representation, render=False)
         env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
         # ------ env set up end ------
-
-        agent = Actor(opt, job="worker")
-        keys = agent.get_weights()[0]
 
         ################################## deques
 
@@ -208,7 +208,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             o_queue.append((o,))
 
         ################################## deques reset
-        # TODO
+
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
