@@ -149,7 +149,8 @@ class Cache(object):
 
         while True:
             if q1.qsize() < 10:
-                q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
+                q1.put(copy.deepcopy(
+                    ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
             if not q2.empty():
                 keys, values = q2.get()
@@ -161,6 +162,7 @@ class Cache(object):
 
     def end(self):
         self.p1.terminate()
+
 
 # TODO
 @ray.remote(num_cpus=2, num_gpus=1, max_calls=1)
@@ -190,7 +192,6 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-
     agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
 
@@ -212,8 +213,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         left_o_queue = deque([], maxlen=opt.Ln + 1)
         left_a_r_d_queue = deque([], maxlen=opt.Ln)
 
-        right_o_queue = deque([], maxlen=opt.Ln + 1)
-        right_a_r_d_queue = deque([], maxlen=opt.Ln)
+        # right_o_queue = deque([], maxlen=opt.Ln + 1)
+        # right_a_r_d_queue = deque([], maxlen=opt.Ln)
 
         ################################## deques
 
@@ -223,17 +224,17 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         t_queue = 1
 
         left_o = o[0]
-        right_o = o[1]
+        # right_o = o[1]
 
         if opt.model == "cnn":
             left_compressed_o = pack(left_o)
             left_o_queue.append((left_compressed_o,))
 
-            right_compressed_o = pack(right_o)
-            right_o_queue.append((right_compressed_o,))
+            # right_compressed_o = pack(right_o)
+            # right_o_queue.append((right_compressed_o,))
         else:
             left_o_queue.append((left_o,))
-            right_o_queue.append((right_o,))
+            # right_o_queue.append((right_o,))
 
         ################################## deques reset
 
@@ -254,8 +255,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 a = env.action_space.sample()
                 filling_steps += 1
             left_action = a[0]
-            right_action = a[1]
-            # print(a)
+            # right_action = a[1]
+
             # Step the env
             o2, r, d, _ = env.step(a)
 
@@ -270,22 +271,23 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             right_o2 = o2[1]
             # #BUG a changed before here
             left_a_r_d_queue.append((left_action, r[0], d,))
-            right_a_r_d_queue.append((right_action, r[1], d,))
+            # right_a_r_d_queue.append((right_action, r[1], d,))
 
             if opt.model == "cnn":
                 left_compressed_o2 = pack(left_o2)
                 left_o_queue.append((left_compressed_o2,))
-                right_compressed_o2 = pack(right_o2)
-                right_o_queue.append((right_compressed_o2,))
+                # right_compressed_o2 = pack(right_o2)
+                # right_o_queue.append((right_compressed_o2,))
             else:
                 left_o_queue.append((left_o2,))
-                right_o_queue.append((right_o2,))
+                # right_o_queue.append((right_o2,))
 
             # scheme 1:
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(left_o_queue, left_a_r_d_queue, worker_index)
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(right_o_queue, right_a_r_d_queue, worker_index)
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(left_o_queue, left_a_r_d_queue,
+                                                                                    worker_index)
+                # replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(right_o_queue, right_a_r_d_queue, worker_index)
 
             t_queue += 1
 
@@ -293,7 +295,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
 
