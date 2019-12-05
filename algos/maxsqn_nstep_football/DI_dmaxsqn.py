@@ -67,7 +67,7 @@ class ReplayBuffer:
         self.size = min(self.size + 1, self.max_size)
         # TODO
         self.steps += 1 * self.opt.num_buffers
-        # self.steps += opt.Ln * opt.action_repeat
+        # self.steps += opt.Ln * opt.action_repeat * self.opt.num_buffers
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
@@ -263,28 +263,17 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-                # TODO
-                sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
+                # try:
+                #     sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote(), timeout=0.5)
+                # except RayTimeoutError:
+                #     print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:',
+                #           using_difficulty, 'rollout_ep_ret:', ep_ret)
+                #     break
 
+                sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
 
-                # if steps > opt.start_steps:
-                #     # update parameters every episode
-                #     weights = ray.get(ps.pull.remote(keys))
-                #     agent.set_weights(keys, weights)
-
-                # o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
-                #
-                # ################################## deques reset
-                # t_queue = 1
-                # if opt.model == "cnn":
-                #     compressed_o = pack(o)
-                #     o_queue.append((compressed_o,))
-                # else:
-                #     o_queue.append((o,))
-                #
-                # ################################## deques reset
                 if mu < 1:
                     mu = sample_times / opt.mu_speed
                 else:
@@ -345,7 +334,7 @@ if __name__ == '__main__':
     # Start some training tasks.
     for i in range(FLAGS.num_workers):
         worker_rollout.remote(ps, replay_buffer, opt, i)
-        time.sleep(0.05)
+        time.sleep(3)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if opt.weights_file:

@@ -116,7 +116,10 @@ class ParameterServer(object):
             self.weights_pool[np.random.choice(20, 1)[0]] = self.weights
 
     def pool_pull(self, keys):
-        worker_weights = self.weights_pool[np.random.choice(len(self.weights_pool), 1)[0]]
+        if np.random.random() < 0.2:
+            worker_weights = self.weights
+        else:
+            worker_weights = self.weights_pool[np.random.choice(len(self.weights_pool), 1)[0]]
         return [worker_weights[key] for key in keys]
 
     def pull(self, keys):
