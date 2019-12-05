@@ -2,8 +2,9 @@ import numpy as np
 import tensorflow as tf
 import time
 import ray
+import gym
 
-from hyperparams_gfootball import HyperParameters, FootballWrapper
+from hyperparams import HyperParameters, Wrapper
 from actor_learner import Actor, Learner
 
 import os
@@ -17,18 +18,17 @@ import inspect
 import json
 from ray.rllib.utils.compression import pack, unpack
 
-import gfootball.env as football_env
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-# "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
-flags.DEFINE_string("env_name", "11_vs_11_competition", "game env")
+
+flags.DEFINE_string("env_name", "BipedalWalker-v2", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 16, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
-flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
+flags.DEFINE_float("a_l_ratio", 2, "steps / sample_times")
 
 
 @ray.remote(num_cpus=2)
@@ -102,22 +102,11 @@ class ParameterServer(object):
         else:
             values = [value.copy() for value in values]
             self.weights = dict(zip(keys, values))
-        self.weights_pool = [self.weights]
 
     def push(self, keys, values):
         values = [value.copy() for value in values]
         for key, value in zip(keys, values):
             self.weights[key] = value
-
-    def pool_push(self):
-        if len(self.weights_pool) < 20:
-            self.weights_pool.append(self.weights)
-        else:
-            self.weights_pool[np.random.choice(20, 1)[0]] = self.weights
-
-    def pool_pull(self, keys):
-        worker_weights = self.weights_pool[np.random.choice(len(self.weights_pool), 1)[0]]
-        return [worker_weights[key] for key in keys]
 
     def pull(self, keys):
         return [self.weights[key] for key in keys]
@@ -183,8 +172,6 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
-        if cnt % 1e5 == 0:
-            ps.pool_push.remote()
         cnt += 1
 
 
@@ -195,25 +182,15 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     keys = agent.get_weights()[0]
 
     filling_steps = 0
-    mu, sigma = 0, 0.2
     while True:
         # ------ env set up ------
-
-        env = football_env.create_environment(env_name=opt.rollout_env_name,
-                                              number_of_left_players_agent_controls=1,
-                                              number_of_right_players_agent_controls=1,
-                                              stacked=opt.stacked, representation=opt.representation, render=False)
-
-        env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
+        env = Wrapper(gym.make(opt.env_name), opt.obs_noise, opt.act_noise, opt.reward_scale, 3)
         # ------ env set up end ------
 
         ################################## deques
 
-        left_o_queue = deque([], maxlen=opt.Ln + 1)
-        left_a_r_d_queue = deque([], maxlen=opt.Ln)
-
-        right_o_queue = deque([], maxlen=opt.Ln + 1)
-        right_a_r_d_queue = deque([], maxlen=opt.Ln)
+        o_queue = deque([], maxlen=opt.Ln + 1)
+        a_r_d_queue = deque([], maxlen=opt.Ln)
 
         ################################## deques
 
@@ -221,71 +198,52 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
         ################################## deques reset
         t_queue = 1
-
-        left_o = o[0]
-        right_o = o[1]
-
         if opt.model == "cnn":
-            left_compressed_o = pack(left_o)
-            left_o_queue.append((left_compressed_o,))
-
-            right_compressed_o = pack(right_o)
-            right_o_queue.append((right_compressed_o,))
+            compressed_o = pack(o)
+            o_queue.append((compressed_o,))
         else:
-            left_o_queue.append((left_o,))
-            right_o_queue.append((right_o,))
+            o_queue.append((o,))
 
         ################################## deques reset
 
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
 
-        right_agent = Actor(opt, job="worker")
-        weights = ray.get(ps.pool_pull.remote(keys))
-        right_agent.set_weights(keys, weights)
         while True:
 
             # don't need to random sample action if load weights from local.
             if filling_steps > opt.start_steps or opt.weights_file:
-                left_action = agent.get_action(o[0], False)
-                right_action = right_agent.get_action(o[1], False)
-                a = [left_action, right_action]
+                a = agent.get_action(o, deterministic=False)
             else:
                 a = env.action_space.sample()
                 filling_steps += 1
-            left_action = a[0]
-            right_action = a[1]
-            # print(a)
             # Step the env
             o2, r, d, _ = env.step(a)
 
             ep_ret += r
             ep_len += 1
 
+            # Ignore the "done" signal if it comes from hitting the time
+            # horizon (that is, when it's an artificial terminal signal
+            # that isn't based on the agent's state)
+            # d = False if ep_len*opt.action_repeat >= opt.max_ep_len else d
+
             o = o2
 
             #################################### deques store
 
-            left_o2 = o2[0]
-            right_o2 = o2[1]
-            # #BUG a changed before here
-            left_a_r_d_queue.append((left_action, r[0], d,))
-            right_a_r_d_queue.append((right_action, r[1], d,))
-
+            a_r_d_queue.append((a, r, d,))
             if opt.model == "cnn":
-                left_compressed_o2 = pack(left_o2)
-                left_o_queue.append((left_compressed_o2,))
-                right_compressed_o2 = pack(right_o2)
-                right_o_queue.append((right_compressed_o2,))
+                compressed_o2 = pack(o2)
+                o_queue.append((compressed_o2,))
             else:
-                left_o_queue.append((left_o2,))
-                right_o_queue.append((right_o2,))
+                o_queue.append((o2,))
 
             # scheme 1:
             # TODO  and t_queue % 2 == 0: %1 lead to q smaller
+            # TODO
             if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(left_o_queue, left_a_r_d_queue, worker_index)
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(right_o_queue, right_a_r_d_queue, worker_index)
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
 
             t_queue += 1
 
@@ -293,20 +251,34 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-
+                # TODO
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
+
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
 
-                break
+                if steps > opt.start_steps:
+                    # update parameters every episode
+                    weights = ray.get(ps.pull.remote(keys))
+                    agent.set_weights(keys, weights)
+
+                o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+
+                ################################## deques reset
+                t_queue = 1
+                if opt.model == "cnn":
+                    compressed_o = pack(o)
+                    o_queue.append((compressed_o,))
+                else:
+                    o_queue.append((o,))
+
+                ################################## deques reset
 
 
 @ray.remote
 def worker_test(ps, replay_buffer, opt):
     agent = Actor(opt, job="main")
 
-    test_env = football_env.create_environment(env_name=opt.env_name,
-                                               stacked=opt.stacked, representation=opt.representation,
-                                               render=False)
+    test_env = Wrapper(gym.make(opt.env_name), opt.obs_noise, opt.act_noise, opt.reward_scale, 3)
 
     agent.test(ps, replay_buffer, opt, test_env)
 
@@ -320,11 +292,7 @@ if __name__ == '__main__':
     opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.num_workers, FLAGS.a_l_ratio,
                           FLAGS.weights_file)
     All_Parameters = copy.deepcopy(vars(opt))
-    All_Parameters["wrapper"] = inspect.getsource(FootballWrapper)
-    import importlib
-
-    scenario = importlib.import_module('gfootball.scenarios.{}'.format(opt.rollout_env_name))
-    All_Parameters["rollout_env_class"] = inspect.getsource(scenario.build_scenario)
+    All_Parameters["wrapper"] = inspect.getsource(Wrapper)
     All_Parameters["obs_space"] = ""
     All_Parameters["act_space"] = ""
 
@@ -353,7 +321,7 @@ if __name__ == '__main__':
     # Start some training tasks.
     for i in range(FLAGS.num_workers):
         worker_rollout.remote(ps, replay_buffer, opt, i)
-        time.sleep(3)
+        time.sleep(0.05)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if opt.weights_file:

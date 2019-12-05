@@ -39,8 +39,6 @@ class ReplayBuffer:
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
         self.steps, self.sample_times = 0, 0
-        print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-        print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
     def store(self, obs, act, rew, next_obs, done):
         self.obs1_buf[self.ptr] = obs
@@ -67,27 +65,24 @@ class ReplayBuffer:
 
 @ray.remote
 class ParameterServer(object):
-    def __init__(self, keys, values, is_restore=False):
+    def __init__(self, keys, values, weights_file=""):
         # These values will be mutated, so we must create a copy that is not
         # backed by the object store.
 
-        if is_restore:
+        if weights_file:
             try:
-                pickle_in = open("weights.pickle", "rb")
-                self.weights = pickle.load(pickle_in)
-                print("****** weights restored! ******")
+                with open(weights_file, "rb") as pickle_in:
+                    self.weights = pickle.load(pickle_in)
+                    print("****** weights restored! ******")
             except:
-                print("------ error: weights.pickle doesn't exist! ------")
+                print("------------------------------------------------")
+                print(weights_file)
+                print("------ error: weights file doesn't exist! ------")
+                exit()
         else:
             values = [value.copy() for value in values]
             self.weights = dict(zip(keys, values))
-        print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-        print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
-    # def push(self, keys, values):
-    #     for key, value in zip(keys, values):
-    #         self.weights[key] += value
 
-    # TODO push gradients or parameters
     def push(self, keys, values):
         values = [value.copy() for value in values]
         for key, value in zip(keys, values):
@@ -96,11 +91,13 @@ class ParameterServer(object):
     def pull(self, keys):
         return [self.weights[key] for key in keys]
 
+    def get_weights(self):
+        return self.weights
+
     # save weights to disk
-    def save_weights(self):
-        pickle_out = open("weights.pickle","wb")
-        pickle.dump(self.weights, pickle_out)
-        pickle_out.close()
+    def save_weights(self, name):
+        with open(name + "weights.pickle", "wb") as pickle_out:
+            pickle.dump(self.weights, pickle_out)
 
 
 class Cache(object):
@@ -135,8 +132,6 @@ class Cache(object):
 
 @ray.remote(num_gpus=1, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -147,15 +142,8 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
     cache.start()
 
-    def signal_handler(signal, frame):
-        cache.end()
-        exit()
-
-    signal.signal(signal.SIGINT, signal_handler)
-
     cnt = 1
     while True:
-        # batch = ray.get(replay_buffer.sample_batch.remote(opt.batch_size))
         batch = cache.q1.get()
         agent.train(batch)
         if cnt % 300 == 0:
@@ -168,8 +156,6 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
     # env = gym.make(opt.env_name)
 
@@ -229,8 +215,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
 @ray.remote
 def worker_test(ps, replay_buffer, opt):
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
 
     agent = Actor(opt, job="main")
 
@@ -270,10 +254,7 @@ def worker_test(ps, replay_buffer, opt):
 
 if __name__ == '__main__':
 
-    ray.init(object_store_memory=1000000000, redis_max_memory=1000000000)
-
-    print("ray.get_gpu_ids(): {}".format(ray.get_gpu_ids()))
-    # print("CUDA_VISIBLE_DEVICES: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+    ray.init()
 
     opt = HyperParameters(FLAGS.env_name, FLAGS.total_epochs, FLAGS.num_workers, FLAGS.a_l_ratio)
 

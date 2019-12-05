@@ -1,65 +1,107 @@
 import numpy as np
 import os
 import sys
-import gym
+from gym.spaces import Box
 import datetime
+import gym
+from numbers import Number
 
 
 class HyperParameters:
-    def __init__(self, env_name, total_epochs, num_workers=1, a_l_ratio=1):
+    def __init__(self, env_name, exp_name, num_workers, a_l_ratio, weights_file):
         # parameters set
 
-        # ray_servr_address = ""
+        self.exp_name = exp_name
 
-        # self.env_name = 'LunarLanderContinuous-v2'   # 'MountainCarContinuous-v0'
         self.env_name = env_name
-        # BipedalWalker-v2
-        # Pendulum-v0
-        # self.env_name = 'MountainCarContinuous-v0'
+        # "_random", "_d_True", ""
+        self.rollout_env_name = self.env_name + ""
+
+        self.model = "mlp"
+        assert self.model in ["mlp", "cnn"], "model must be mlp or cnn!"
+        if self.model == "cnn":
+            self.representation = "extracted"
+            self.stacked = True
+        else:
+            self.representation = 'simple115'
+            self.stacked = False
 
         self.a_l_ratio = a_l_ratio
-
-        # self.wrapper = True
+        self.weights_file = weights_file
+        self.start_steps = int(5e4)
+        if self.weights_file:
+            self.start_steps = int(10e6)
 
         # gpu memory fraction
-        self.gpu_fraction = 0.05
+        self.gpu_fraction = 0.3
 
-        env = gym.make(env_name)
-        self.obs_dim = env.observation_space.shape[0]
-        self.act_dim = env.action_space.shape[0]
+        self.hidden_size = (300, 400, 300)
 
-        # Action limit for clamping: critically, assumes all dimensions share the same bound!
-        self.act_limit = env.action_space.high[0]
+        self.obs_noise = 0
+        self.act_noise = 0.3
+        self.reward_scale = 5
+        env = Wrapper(gym.make(self.env_name), self.obs_noise, self.act_noise, self.reward_scale, 3)
 
-        self.ac_kwargs = dict(hidden_sizes=[400, 300])
-        # Share information about action space with policy architecture
-        self.action_space = env.action_space
-        self.ac_kwargs['action_space'] = env.action_space
+        # env = FootballWrapper(env_football)
 
-        self.total_epochs = total_epochs
+        # self.obs_space = Box(low=-1.0, high=1.0, shape=self.obs_dim, dtype=np.float32)
+        self.obs_dim = env.observation_space.shape
+        self.obs_space = env.observation_space
+        self.obs_shape = self.obs_space.shape
+
+        self.act_dim = env.action_space.shape
+        self.act_space = env.action_space
+        self.act_shape = self.act_space.shape
+
         self.num_workers = num_workers
+        self.num_learners = 1
 
-        self.alpha = 0.2
+        self.use_max = False
+        self.alpha = 0.1
+        # self.alpha = "auto"
+        self.target_entropy = 0.5
 
-        self.gamma = 0.99
-        self.replay_size = 1000000
-        self.lr = 1e-4
+        self.use_bn = False
+        self.c_regularizer = 0.0
+
+        self.gamma = 0.997
+
+        # self.num_buffers = 1
+        self.num_buffers = self.num_workers // 25 + 1
+        if self.model == 'cnn':
+            self.buffer_size = int(3e4)
+        else:
+            self.buffer_size = int(3e6)
+
+        self.buffer_size = self.buffer_size // self.num_buffers
+
+        self.lr = 5e-5
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
-        self.batch_size = 100
-        self.start_steps = 10000
-        self.max_ep_len = 2000
+        self.batch_size = 256
+
+        self.Ln = 8
+        self.action_repeat = 2
+
+        self.max_ep_len = 2900
         self.save_freq = 1
+
+        self.max_ret = 0
+
+        self.epsilon = 0
+        self.epsilon_alpha = 7
 
         self.seed = 0
 
-        self.act_noise = 0.3
-        self.obs_noise = 0.0
-        self.reward_scale = 5.0
+        cwd = os.getcwd()
 
-        self.summary_dir = './tboard_ray_sac1'  # Directory for storing tensorboard summary results
-        self.save_dir = './model_ray_sac1'      # Directory for storing trained model
+        self.summary_dir = cwd + '/tboard_ray'  # Directory for storing tensorboard summary results
+        self.save_dir = cwd + '/' + self.exp_name  # Directory for storing trained model
+        self.save_interval = int(5e5)
+
+        self.log_dir = self.summary_dir + "/" + str(datetime.datetime.now()) + "-workers_num:" + \
+                       str(self.num_workers) + "%" + str(self.a_l_ratio) + self.env_name + "-" + self.exp_name
 
 
 class Wrapper(object):
