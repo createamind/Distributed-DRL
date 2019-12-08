@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "11_vs_11_competition", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 16, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -110,16 +110,16 @@ class ParameterServer(object):
             self.weights[key] = value
 
     def pool_push(self):
-        if len(self.weights_pool) < 20:
+        if len(self.weights_pool) < 100:
             self.weights_pool.append(self.weights)
         else:
-            self.weights_pool[np.random.choice(20, 1)[0]] = self.weights
+            self.weights_pool[np.random.choice(100, 1)[0]] = self.weights
 
     def pool_pull(self, keys):
-        if np.random.random() < 0.2:
-            worker_weights = self.weights
-        else:
-            worker_weights = self.weights_pool[np.random.choice(len(self.weights_pool), 1)[0]]
+        # if np.random.random() < 0.2:
+        #     worker_weights = self.weights
+        # else:
+        worker_weights = self.weights_pool[np.random.choice(len(self.weights_pool), 1)[0]]
         return [worker_weights[key] for key in keys]
 
     def pull(self, keys):
@@ -188,7 +188,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
-        if cnt % 1e5 == 0:
+        if cnt % 1e4 == 0:
             ps.pool_push.remote()
         cnt += 1
 
@@ -196,21 +196,23 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
     agent = Actor(opt, job="worker")
+    right_agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
 
     filling_steps = 0
     mu, sigma = 0, 0.2
+
+    # ------ env set up ------
+
+    env = football_env.create_environment(env_name=opt.rollout_env_name,
+                                          number_of_left_players_agent_controls=1,
+                                          number_of_right_players_agent_controls=1,
+                                          stacked=opt.stacked, representation=opt.representation, render=False)
+
+    env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
+    # ------ env set up end ------
+
     while True:
-        # ------ env set up ------
-
-        env = football_env.create_environment(env_name=opt.rollout_env_name,
-                                              number_of_left_players_agent_controls=1,
-                                              number_of_right_players_agent_controls=1,
-                                              stacked=opt.stacked, representation=opt.representation, render=False)
-
-        env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
-        # ------ env set up end ------
-
         ################################## deques
 
         left_o_queue = deque([], maxlen=opt.Ln + 1)
@@ -243,9 +245,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
-
-        right_agent = Actor(opt, job="worker")
-        weights = ray.get(ps.pool_pull.remote(keys))
+        if np.random.random() > 0.5:
+            weights = ray.get(ps.pool_pull.remote(keys))
         right_agent.set_weights(keys, weights)
         while True:
 
@@ -299,7 +300,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
-                print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret[0])
 
                 break
 
@@ -308,7 +309,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 def worker_test(ps, replay_buffer, opt):
     agent = Actor(opt, job="main")
 
-    test_env = football_env.create_environment(env_name=opt.env_name,
+    test_env = football_env.create_environment(env_name="11_vs_11_easy_stochastic",
                                                stacked=opt.stacked, representation=opt.representation,
                                                render=False)
 
