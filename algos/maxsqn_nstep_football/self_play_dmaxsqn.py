@@ -215,6 +215,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     while True:
 
         # sides = {'left':0, 'right':1}
+        np.random.seed()
         if np.random.random() > 0.5:
             our_side = 0
             opp_side = 1
@@ -259,6 +260,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         weights = ray.get(ps.pull.remote(keys))
         is_self_play = True
         our_agent.set_weights(keys, weights)
+        np.random.seed()
         if np.random.random() > 0.5:
             weights = ray.get(ps.pool_pull.remote(keys))
             is_self_play = False
@@ -321,7 +323,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
-                print('rollout_ep_len:', ep_len * opt.action_repeat, 'is_self_play:', is_self_play,'rollout_ep_ret:', ep_ret[our_side])
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
                 break
 
