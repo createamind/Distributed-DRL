@@ -257,9 +257,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         ################################## deques reset
 
         weights = ray.get(ps.pull.remote(keys))
+        is_self_play = True
         our_agent.set_weights(keys, weights)
         if np.random.random() > 0.5:
             weights = ray.get(ps.pool_pull.remote(keys))
+            is_self_play = False
         opp_agent.set_weights(keys, weights)
         while True:
 
@@ -319,7 +321,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
-                print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret[our_side])
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'is_self_play:', is_self_play,'rollout_ep_ret:', ep_ret[our_side])
 
                 break
 
