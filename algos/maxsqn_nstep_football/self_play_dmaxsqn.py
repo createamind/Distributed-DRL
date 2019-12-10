@@ -189,7 +189,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
-        if cnt % 1e4 == 0:
+        if cnt % opt.pool_push_freq == 0:
             ps.pool_push.remote()
         cnt += 1
 
