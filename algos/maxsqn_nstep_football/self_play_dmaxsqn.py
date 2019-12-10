@@ -85,9 +85,10 @@ class ReplayBuffer:
 
 @ray.remote
 class ParameterServer(object):
-    def __init__(self, keys, values, weights_file=""):
+    def __init__(self, opt, keys, values, weights_file=""):
         # These values will be mutated, so we must create a copy that is not
         # backed by the object store.
+        self.opt = opt
 
         if weights_file:
             try:
@@ -110,10 +111,10 @@ class ParameterServer(object):
             self.weights[key] = value
 
     def pool_push(self):
-        if len(self.weights_pool) < 100:
+        if len(self.weights_pool) < self.opt.num_in_pool:
             self.weights_pool.append(self.weights)
         else:
-            self.weights_pool[np.random.choice(100, 1)[0]] = self.weights
+            self.weights_pool[np.random.choice(self.opt.num_in_pool, 1)[0]] = self.weights
 
     def pool_pull(self, keys):
         # if np.random.random() < 0.2:
@@ -261,7 +262,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         is_self_play = True
         our_agent.set_weights(keys, weights)
         np.random.seed()
-        if np.random.random() > 0.5:
+        if np.random.random() > opt.self_play_probability:
             weights = ray.get(ps.pool_pull.remote(keys))
             is_self_play = False
         opp_agent.set_weights(keys, weights)
@@ -366,11 +367,11 @@ if __name__ == '__main__':
     # ------ end ------
 
     if FLAGS.weights_file:
-        ps = ParameterServer.remote([], [], weights_file=FLAGS.weights_file)
+        ps = ParameterServer.remote(opt, [], [], weights_file=FLAGS.weights_file)
     else:
         net = Learner(opt, job="main")
         all_keys, all_values = net.get_weights()
-        ps = ParameterServer.remote(all_keys, all_values)
+        ps = ParameterServer.remote(opt, all_keys, all_values)
 
     # Experience buffer
     # Methods called on different actors can execute in parallel,
