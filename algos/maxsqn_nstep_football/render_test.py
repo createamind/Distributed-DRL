@@ -17,7 +17,7 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 # "1_vs_1_easy" '11_vs_11_easy_stochastic' '11_vs_11_competition'
-flags.DEFINE_string("env_name", "11_vs_11_easy_stochastic", "game env")
+flags.DEFINE_string("env_name", "11_vs_11_competition", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
 flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 6, "number of workers")

@@ -274,10 +274,16 @@ class Actor(object):
     def test(self, ps, replay_buffer, opt, test_env, n=50):
 
         keys, _ = self.get_weights()
-        max_sample_times = 0
+        max_learner_steps = 0
         max_ret = 0
-        last_sample_times = 0
-        start_time = last_time = time.time()
+        start_time = time.time()
+
+        # start testing after training is started.
+        last_actor_steps = 0
+        while last_actor_steps < 1:
+            time.sleep(5)
+            last_learner_steps, last_actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
+            last_time = time.time()
 
         while True:
             # weights_all for save it to local
@@ -286,8 +292,7 @@ class Actor(object):
 
             self.set_weights(keys, weights)
             # TODO
-            sample_times, steps, size = ray.get(replay_buffer[0].get_counts.remote())
-            time_now = time.time()
+
             rew = []
             for j in range(n):
                 o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
@@ -300,34 +305,38 @@ class Actor(object):
                 print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
             test_reward = sum(rew) / n
-            update_frequency = (sample_times - last_sample_times) / (time_now - last_time)
-            a_l_ratio = str((steps - opt.start_steps) / (sample_times + 1))[:4]
+
+            learner_steps, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
+            time_now = time.time()
+            update_frequency = (learner_steps - last_learner_steps) / (time_now - last_time)
+            a_l_ratio = str((actor_steps - last_actor_steps) / (learner_steps - last_learner_steps))[:4]
 
             print("----------------------------------")
             print("| test_reward:", test_reward)
-            print("| sample_times:", sample_times)
-            print("| steps:", steps)
+            print("| learner_steps:", learner_steps)
+            print("| actor_steps:", actor_steps)
             print("| buffer_size:", size)
             print("| actual a_l_ratio:", a_l_ratio)
             print('- update frequency:', update_frequency, 'total time:', time_now - start_time)
             print("----------------------------------")
 
-            if sample_times // opt.save_interval > max_sample_times:
-                with open(opt.save_dir + "/" + str(sample_times / 1e6) + "M_" + str(
+            if learner_steps // opt.save_interval > max_learner_steps:
+                with open(opt.save_dir + "/" + str(learner_steps / 1e6) + "M_" + str(
                         test_reward) + "_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by time! ******")
-                max_sample_times = sample_times // opt.save_interval
+                max_learner_steps = learner_steps // opt.save_interval
 
             if test_reward > max_ret:
-                with open(opt.save_dir + "/" + str(sample_times / 1e6) + "M_" + str(
+                with open(opt.save_dir + "/" + str(learner_steps / 1e6) + "M_" + str(
                         test_reward) + "Max_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by maxret! ******")
                 max_ret = test_reward
 
             last_time = time_now
-            last_sample_times = sample_times
+            last_learner_steps = learner_steps
+            last_actor_steps = actor_steps
 
             summary_str = self.sess.run(self.test_ops, feed_dict={
                 self.test_vars[0]: test_reward,
@@ -335,7 +344,7 @@ class Actor(object):
                 self.test_vars[2]: update_frequency
             })
 
-            self.writer.add_summary(summary_str, sample_times)
+            self.writer.add_summary(summary_str, learner_steps)
             self.writer.flush()
 
     # Tensorflow Summary Ops
