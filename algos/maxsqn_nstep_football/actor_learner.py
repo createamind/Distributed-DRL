@@ -313,22 +313,22 @@ class Actor(object):
 
             print("----------------------------------")
             print("| test_reward:", test_reward)
-            print("| learner_steps:", learner_steps)
-            print("| actor_steps:", actor_steps)
+            print("| learner_steps:", last_learner_steps)
+            print("| actor_steps:", last_actor_steps)
             print("| buffer_size:", size)
             print("| actual a_l_ratio:", a_l_ratio)
             print('- update frequency:', update_frequency, 'total time:', time_now - start_time)
             print("----------------------------------")
 
             if learner_steps // opt.save_interval > max_learner_steps:
-                with open(opt.save_dir + "/" + str(learner_steps / 1e6) + "M_" + str(
+                with open(opt.save_dir + "/" + str(last_learner_steps / 1e6) + "M_" + str(
                         test_reward) + "_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by time! ******")
                 max_learner_steps = learner_steps // opt.save_interval
 
             if test_reward > max_ret:
-                with open(opt.save_dir + "/" + str(learner_steps / 1e6) + "M_" + str(
+                with open(opt.save_dir + "/" + str(last_learner_steps / 1e6) + "M_" + str(
                         test_reward) + "Max_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by maxret! ******")
