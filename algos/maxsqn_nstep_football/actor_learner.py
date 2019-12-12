@@ -74,7 +74,7 @@ class Learner(object):
                 min_q_pi = tf.minimum(q1_pi_, q2_pi_)  # x2
 
             # get rid of abnormal explosion
-            min_q_pi = tf.clip_by_value(min_q_pi, -300.0, 900.0)
+            # min_q_pi = tf.clip_by_value(min_q_pi, -300.0, 900.0)
 
             #### n-step backup
             q_backup = tf.stop_gradient(min_q_pi)
