@@ -327,7 +327,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
-                while (actor_steps-opt.start_steps)/learner_steps > opt.a_l_ratio:
+                while (actor_steps-opt.start_steps)/(learner_steps+1) > opt.a_l_ratio:
                     time.sleep(1)
                     learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
