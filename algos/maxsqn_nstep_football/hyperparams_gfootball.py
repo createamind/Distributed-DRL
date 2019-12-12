@@ -57,7 +57,8 @@ class HyperParameters:
 
         self.num_in_pool = 100  # 3 * num_workers
         self.self_play_probability = 0.7
-        self.pool_push_freq = 1e4
+        self.pool_push_freq = int(1e4)
+        self.a_l_ratio = 20
 
         self.use_max = False
         self.alpha = 0.1
