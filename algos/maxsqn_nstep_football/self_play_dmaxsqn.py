@@ -322,13 +322,14 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             #################################### deques store
 
             # End of episode. Training (ep_len times).
+            rand_buff = np.random.choice(opt.num_buffers, 1)[0]
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-                sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
+                learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
-                while (steps-opt.start_steps)/sample_times > opt.a_l_ratio:
-                    time.sleep(5)
-                    sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
+                while (actor_steps-opt.start_steps)/learner_steps > opt.a_l_ratio:
+                    time.sleep(1)
+                    learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
                 break
 
