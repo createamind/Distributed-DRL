@@ -61,7 +61,8 @@ class HyperParameters:
         self.a_l_ratio = 20
 
         self.use_max = False
-        self.alpha = 0.1
+        self.reward_scale = 15
+        self.alpha = 0.01
         # self.alpha = "auto"
         self.target_entropy = 0.5
 
@@ -87,7 +88,6 @@ class HyperParameters:
 
         self.Ln = 5
         self.action_repeat = 3
-        self.reward_scale = 150
         self.max_ep_len = 2990
         self.save_freq = 1
 

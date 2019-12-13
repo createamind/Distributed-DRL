@@ -335,7 +335,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 # for a_l_ratio control
                 learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
-                    time.sleep(2)
+                    time.sleep(1)
                     learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
                 break
