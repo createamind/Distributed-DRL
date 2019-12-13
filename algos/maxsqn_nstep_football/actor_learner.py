@@ -274,8 +274,8 @@ class Actor(object):
     def test(self, ps, replay_buffer, opt, test_env, n=50):
 
         keys, _ = self.get_weights()
-        max_learner_steps = 0
-        max_ret = 0
+        save_times = 0
+        max_ret = -10000
         start_time = time.time()
 
         # start testing after training is started.
@@ -320,12 +320,12 @@ class Actor(object):
             print('- update frequency:', update_frequency, 'total time:', time_now - start_time)
             print("----------------------------------")
 
-            if learner_steps // opt.save_interval > max_learner_steps:
+            if last_learner_steps // opt.save_interval > save_times:
                 with open(opt.save_dir + "/" + str(last_learner_steps / 1e6) + "M_" + str(
                         test_reward) + "_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by time! ******")
-                max_learner_steps = learner_steps // opt.save_interval
+                save_times = last_learner_steps // opt.save_interval
 
             if test_reward > max_ret:
                 with open(opt.save_dir + "/" + str(last_learner_steps / 1e6) + "M_" + str(
