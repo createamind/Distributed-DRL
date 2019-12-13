@@ -344,7 +344,7 @@ class Actor(object):
                 self.test_vars[2]: update_frequency
             })
 
-            self.writer.add_summary(summary_str, learner_steps)
+            self.writer.add_summary(summary_str, last_learner_steps)
             self.writer.flush()
 
     # Tensorflow Summary Ops
