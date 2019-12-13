@@ -266,6 +266,10 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             weights = ray.get(ps.pool_pull.remote(keys))
             is_self_play = False
         opp_agent.set_weights(keys, weights)
+
+        # for a_l_ratio control
+        last_learner_steps, last_actor_steps, _size = ray.get(replay_buffer[0].get_counts.remote())
+
         while True:
 
             # don't need to random sample action if load weights from local.
@@ -327,11 +331,14 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
-                while (actor_steps-opt.start_steps)/(learner_steps+1) > opt.a_l_ratio:
+                # for a_l_ratio control
+                learner_steps, actor_steps, _size = ray.get(replay_buffer[0].get_counts.remote())
+                while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
                     time.sleep(1)
-                    learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
+                    learner_steps, actor_steps, _size = ray.get(replay_buffer[0].get_counts.remote())
 
                 break
+
 
 
 @ray.remote
