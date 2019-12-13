@@ -268,7 +268,9 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         opp_agent.set_weights(keys, weights)
 
         # for a_l_ratio control
-        last_learner_steps, last_actor_steps, _size = ray.get(replay_buffer[0].get_counts.remote())
+        np.random.seed()
+        rand_buff = np.random.choice(opt.num_buffers, 1)[0]
+        last_learner_steps, last_actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
         while True:
 
@@ -326,16 +328,15 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             #################################### deques store
 
             # End of episode. Training (ep_len times).
-            rand_buff = np.random.choice(opt.num_buffers, 1)[0]
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
                 learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
                 # for a_l_ratio control
-                learner_steps, actor_steps, _size = ray.get(replay_buffer[0].get_counts.remote())
+                learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
-                    time.sleep(1)
-                    learner_steps, actor_steps, _size = ray.get(replay_buffer[0].get_counts.remote())
+                    time.sleep(2)
+                    learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
                 break
 
