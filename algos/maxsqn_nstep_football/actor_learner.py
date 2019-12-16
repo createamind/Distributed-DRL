@@ -327,7 +327,7 @@ class Actor(object):
                     print("****** Weights saved by time! ******")
                 save_times = last_learner_steps // opt.save_interval
 
-            if test_reward > max_ret:
+            if test_reward >= max_ret:
                 with open(opt.save_dir + "/" + str(last_learner_steps / 1e6) + "M_" + str(
                         test_reward) + "Max_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)

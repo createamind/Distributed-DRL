@@ -33,7 +33,7 @@ opt.hidden_size = (300, 400, 300)
 
 agent = Actor(opt, job="test")
 keys, _ = agent.get_weights()
-with open("./LN=5E1.pickle", "rb") as pickle_in:
+with open("M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/13.083036M_6.78_weights.pickle", "rb") as pickle_in:
     weights_all = pickle.load(pickle_in)
     weights = [weights_all[key] for key in keys]
     agent.set_weights(keys, weights)
@@ -42,7 +42,7 @@ test_env = football_env.create_environment(env_name=opt.env_name, stacked=opt.st
                                            representation=opt.representation, render=False)
 
 # test_env = FootballWrapper(test_env)
-n = 100
+n = 300
 
 rew = []
 for j in range(1, n + 1):
