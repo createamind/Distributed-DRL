@@ -55,14 +55,14 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.num_in_pool = 3 * num_workers # 200
-        self.self_play_probability = 0.5
+        self.num_in_pool = 300  # 3 * num_workers
+        self.self_play_probability = 0.0
         self.pool_push_freq = int(1e4)
         self.a_l_ratio = 20
 
         self.use_max = False
-        self.reward_scale = 15
-        self.alpha = 0.01
+        self.reward_scale = 180
+        self.alpha = 0.1
         # self.alpha = "auto"
         self.target_entropy = 0.5
 
@@ -92,7 +92,7 @@ class HyperParameters:
         self.save_freq = 1
 
         self.max_ret = 0
-        self.mu_speed = 3e6
+        self.mu_speed = 5e6
         self.game_difficulty = 1
         self.threshold_score = 96
 
