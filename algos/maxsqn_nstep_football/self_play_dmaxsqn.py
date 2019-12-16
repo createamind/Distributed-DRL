@@ -25,7 +25,7 @@ FLAGS = tf.app.flags.FLAGS
 # "1_vs_1_easy" '11_vs_11_competition' '11_vs_11_stochastic'
 flags.DEFINE_string("env_name", "11_vs_11_competition", "game env")
 flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 16, "number of workers")
+flags.DEFINE_integer("num_workers", 26, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
@@ -195,7 +195,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 
 @ray.remote
-def worker_rollout(ps, replay_buffer, opt, worker_index):
+def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
     our_agent = Actor(opt, job="worker")
     opp_agent = Actor(opt, job="worker")
     keys = our_agent.get_weights()[0]
@@ -341,6 +341,118 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 break
 
 
+@ray.remote
+def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
+    rollout_di_env_name = "11_vs_11_stochastic"
+
+    agent = Actor(opt, job="worker")
+    keys = agent.get_weights()[0]
+
+    filling_steps = 0
+    mu, sigma = 0, 0.2
+    while True:
+        # ------ env set up ------
+
+        while True:
+            np.random.seed()
+            s = np.random.normal(mu, sigma, 1)
+            if 0 < s[0] < 1:
+                using_difficulty = int(s[0] // 0.05 + 1)
+                break
+
+        env = football_env.create_environment(env_name=rollout_di_env_name + '_' + str(using_difficulty),
+                                              stacked=opt.stacked, representation=opt.representation, render=False)
+
+        env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
+        # ------ env set up end ------
+
+        ################################## deques
+
+        o_queue = deque([], maxlen=opt.Ln + 1)
+        a_r_d_queue = deque([], maxlen=opt.Ln)
+
+        ################################## deques
+
+        o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+
+        ################################## deques reset
+        t_queue = 1
+        if opt.model == "cnn":
+            compressed_o = pack(o)
+            o_queue.append((compressed_o,))
+        else:
+            o_queue.append((o,))
+
+        ################################## deques reset
+
+        weights = ray.get(ps.pull.remote(keys))
+        agent.set_weights(keys, weights)
+
+        # for a_l_ratio control
+        np.random.seed()
+        rand_buff = np.random.choice(opt.num_buffers, 1)[0]
+        last_learner_steps, last_actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
+
+        while True:
+
+            # don't need to random sample action if load weights from local.
+            if filling_steps > opt.start_steps or opt.weights_file:
+                a = agent.get_action(o, deterministic=False)
+            else:
+                a = env.action_space.sample()
+                filling_steps += 1
+            # Step the env
+            o2, r, d, _ = env.step(a)
+
+            ep_ret += r
+            ep_len += 1
+
+            # Ignore the "done" signal if it comes from hitting the time
+            # horizon (that is, when it's an artificial terminal signal
+            # that isn't based on the agent's state)
+            # d = False if ep_len*opt.action_repeat >= opt.max_ep_len else d
+
+            o = o2
+
+            #################################### deques store
+
+            a_r_d_queue.append((a, r, d,))
+            if opt.model == "cnn":
+                compressed_o2 = pack(o2)
+                o_queue.append((compressed_o2,))
+            else:
+                o_queue.append((o2,))
+
+            # scheme 1:
+            # TODO  and t_queue % 2 == 0: %1 lead to q smaller
+            # TODO
+            if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
+
+            t_queue += 1
+
+            #################################### deques store
+
+            # End of episode. Training (ep_len times).
+            if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+
+                sample_times, steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
+                      'rollout_ep_ret:', ep_ret)
+
+                if mu < 1:
+                    mu = sample_times / opt.mu_speed
+                else:
+                    mu = 1
+
+                # for a_l_ratio control
+                learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
+                while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
+                    time.sleep(1)
+                    learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
+
+                break
+
 
 @ray.remote
 def worker_test(ps, replay_buffer, opt):
@@ -393,8 +505,11 @@ if __name__ == '__main__':
     replay_buffer = [ReplayBuffer.remote(opt) for i in range(opt.num_buffers)]
 
     # Start some training tasks.
-    for i in range(FLAGS.num_workers):
-        worker_rollout.remote(ps, replay_buffer, opt, i)
+    for i in range(FLAGS.num_workers//2):
+        worker_rollout_self_play.remote(ps, replay_buffer, opt, i)
+        time.sleep(3)
+    for i in range(FLAGS.num_workers//2):
+        worker_rollout_bot.remote(ps, replay_buffer, opt, i)
         time.sleep(3)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
