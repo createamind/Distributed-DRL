@@ -28,12 +28,15 @@ flags.DEFINE_float("a_l_ratio", 2, "steps / sample_times")
 
 opt = HyperParameters(FLAGS.env_name, FLAGS.exp_name, FLAGS.num_workers, FLAGS.a_l_ratio,
                       FLAGS.weights_file)
+
 opt.hidden_size = (300, 400, 300)
-# opt.hidden_size = (400, 300)
+
+agent_weights = "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/27.037036M_6.4_weights.pickle"
+print("agent_weights:", agent_weights)
 
 agent = Actor(opt, job="test")
 keys, _ = agent.get_weights()
-with open("M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/13.083036M_6.78_weights.pickle", "rb") as pickle_in:
+with open(agent_weights, "rb") as pickle_in:
     weights_all = pickle.load(pickle_in)
     weights = [weights_all[key] for key in keys]
     agent.set_weights(keys, weights)
@@ -42,7 +45,7 @@ test_env = football_env.create_environment(env_name=opt.env_name, stacked=opt.st
                                            representation=opt.representation, render=False)
 
 # test_env = FootballWrapper(test_env)
-n = 300
+n = 1000
 
 rew = []
 for j in range(1, n + 1):

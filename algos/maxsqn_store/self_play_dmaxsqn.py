@@ -564,7 +564,7 @@ if __name__ == '__main__':
         _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
         while steps < fill_steps:
             _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
-            print('fill steps before learn:', steps)
+            print('fill steps before learning:', steps)
             time.sleep(1)
     else:
         time.sleep(3)

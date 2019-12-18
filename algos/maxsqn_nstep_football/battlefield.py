@@ -9,16 +9,16 @@ import gfootball.env as football_env
 
 
 
-left_team_weights = "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/11.644652M_7.12_weights.pickle" # "9.16Max_weights.pickle" #
-right_team_weights = "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/13.083036M_6.78_weights.pickle"  # "M3432P1000_10k_Pro0.5_KeepratioE111_OLD_Scale180_alpha0.1_E1/3.031384M_4.42_weights.pickle"
+left_team_weights = "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/21.138408M_5.98_weights.pickle"
+right_team_weights = "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/27.037036M_6.4_weights.pickle"
+print("left_team_weights:", left_team_weights)
+print("right_team_weights:", right_team_weights)
+
 # "9.16Max_weights.pickle"
 # 11.644652M_7.12_weights.pickle
-# "4.126158M_4.88_weights.pickle"
+# 21.138408M_5.98_weights.pickle
 # "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/6.029512M_5.82_weights.pickle"
-#
-# "M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/8.034788M_6.38_weights.pickle"  #
-# 12.544568M_6.74_weights.pickle
-# 13.083036M_6.78_weights.pickle
+# "M3432P1000_10k_Pro0.5_KeepratioE111_OLD_Scale180_alpha0.1_E1/3.031384M_4.42_weights.pickle"
 
 
 # 15 2.66 l50 -0.88
@@ -47,9 +47,9 @@ right_agent.set_weights(keys, right_weights)
 test_env = football_env.create_environment(env_name=opt.env_name, stacked=opt.stacked,
                                            number_of_left_players_agent_controls=1,
                                            number_of_right_players_agent_controls=1,
-                                           representation=opt.representation, render=True)
+                                           representation=opt.representation, render=False)
 
-n = 300
+n = 1000
 
 rew = []
 for j in range(1, n + 1):

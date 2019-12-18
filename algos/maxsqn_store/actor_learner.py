@@ -166,7 +166,7 @@ class Learner(object):
                      }
 
         outs = self.sess.run(self.step_ops, feed_dict)
-        if cnt % 300 == 0:
+        if cnt % 500 == 0:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
@@ -310,7 +310,7 @@ class Actor(object):
             learner_steps, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
             time_now = time.time()
             update_frequency = (learner_steps - last_learner_steps) / (time_now - last_time)
-            a_l_ratio = str((actor_steps - last_actor_steps) / (learner_steps - last_learner_steps+1))[:4]
+            a_l_ratio = str((actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1))[:4]
             total_time = time_now - start_time
 
             print("----------------------------------")
@@ -342,7 +342,7 @@ class Actor(object):
                 buffer_save_op = [replay_buffer[i].save.remote() for i in range(opt.num_buffers)]
                 ps_save_op = ps.save_weights.remote()
                 ray.wait(buffer_save_op + [ps_save_op], num_returns=opt.num_buffers+1)
-                print("save total time:", time.time()-save_start_time)
+                print("total time for saving :", time.time()-save_start_time)
                 checkpoint_time = total_time // opt.checkpoint_freq
 
             last_time = time_now
