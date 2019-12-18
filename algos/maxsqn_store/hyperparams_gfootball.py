@@ -28,6 +28,11 @@ class HyperParameters:
 
         self.a_l_ratio = a_l_ratio
         self.weights_file = weights_file
+
+        self.recover = False
+        # 21600s = 6h
+        self.checkpoint_freq = 21600
+
         self.start_steps = int(5e4)
         if self.weights_file:
             self.start_steps = int(10e6)
