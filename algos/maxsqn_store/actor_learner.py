@@ -314,12 +314,13 @@ class Actor(object):
             total_time = time_now - start_time
 
             print("----------------------------------")
+            print("| exp_name:", opt.exp_name)
             print("| test_reward:", test_reward)
             print("| learner_steps:", last_learner_steps)
             print("| actor_steps:", last_actor_steps)
             print("| buffer_size:", size)
             print("| actual a_l_ratio:", a_l_ratio)
-            print('- update frequency:', update_frequency, 'total time:', total_time)
+            print('- update frequency:', update_frequency, 'total time (hrs):', total_time/3600)
             print("----------------------------------")
 
             if last_learner_steps // opt.save_interval > save_times:
