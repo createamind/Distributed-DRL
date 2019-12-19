@@ -39,7 +39,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.3
 
-        self.hidden_size = (300, 400, 300)
+        self.hidden_size = (300, 400, 400, 300)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
@@ -59,15 +59,15 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.num_in_pool = 300  # 3 * num_workers
+        self.num_in_pool = 500  # 3 * num_workers
         self.pool_pop_ratio = 0.2
         self.bot_worker_ratio = 0.5
         self.self_play_probability = 0.0  # same-weight self-play ratio
         self.pool_push_freq = int(1e4)
-        self.a_l_ratio = 20
+        self.a_l_ratio = 23
 
         self.use_max = False
-        self.reward_scale = 180
+        self.reward_scale = 160
         self.alpha = 0.1
         # self.alpha = "auto"
         self.target_entropy = 0.5
@@ -97,7 +97,7 @@ class HyperParameters:
         self.max_ep_len = 2990
         self.save_freq = 1
 
-        self.mu_speed = 5e6
+        self.mu_speed = 7e6
         self.game_difficulty = 1
         self.threshold_score = 96
 
