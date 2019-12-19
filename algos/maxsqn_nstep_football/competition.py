@@ -38,7 +38,7 @@ flags.DEFINE_string('token', '4HESaBAE1Q_1573465228', 'Token to use.')
 flags.DEFINE_integer('how_many', 10, 'How many games to play')
 flags.DEFINE_bool('render', False, 'Whether to render a game.')
 flags.DEFINE_string('track', '11vs11', 'Name of the competition track.')
-flags.DEFINE_string('model_name', 'kangaroo-easy',
+flags.DEFINE_string('model_name', 'kangaroo-easy2',
                     'A model identifier to be displayed on the leaderboard.')
 flags.DEFINE_string('inference_model', '',
                     'A path to an inference model. Empty for random actions')
@@ -53,7 +53,7 @@ def main(unused_argv):
 
     model = Actor(opt, job="test")
     keys, _ = model.get_weights()
-    with open("9.16Max_weights.pickle", "rb") as pickle_in:
+    with open("M343Pool3*wPro0.5Keepratio20_Scale_180_OLD/27.746148M_7.56Max_weights.pickle", "rb") as pickle_in:
         weights_all = pickle.load(pickle_in)
     weights = [weights_all[key] for key in keys]
 
@@ -69,9 +69,9 @@ def main(unused_argv):
         while not done:
             try:
                 action = model.get_action(ob, True)
-                logging.info('Before calling env.step')
+                # logging.info('Before calling env.step')
                 ob, rew, done, _ = env.step(action)
-                logging.info('After calling env.step')
+                # logging.info('After calling env.step')
                 print('Playing the game, step {}, action {}, rew {}, done {}'.format(
                     cnt, action, rew, done))
                 cnt += 1

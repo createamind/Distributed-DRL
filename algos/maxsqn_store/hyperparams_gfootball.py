@@ -60,7 +60,8 @@ class HyperParameters:
         self.num_learners = 1
 
         self.num_in_pool = 300  # 3 * num_workers
-        self.self_play_probability = 0.0
+        self.bot_worker_ratio = 0.5
+        self.self_play_probability = 0.0  # same-weight self-play ratio
         self.pool_push_freq = int(1e4)
         self.a_l_ratio = 20
 

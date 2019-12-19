@@ -546,10 +546,11 @@ if __name__ == '__main__':
         ray.wait(buffer_load_op, num_returns=opt.num_buffers)
 
     # Start some training tasks.
-    for i in range(FLAGS.num_workers//2):
+    num_bot_worker = int(opt.bot_worker_ratio * FLAGS.num_workers)
+    for i in range(FLAGS.num_workers-num_bot_worker):
         worker_rollout_self_play.remote(ps, replay_buffer, opt, i)
         time.sleep(3)
-    for i in range(FLAGS.num_workers//2):
+    for i in range(num_bot_worker):
         worker_rollout_bot.remote(ps, replay_buffer, opt, i)
         time.sleep(3)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
