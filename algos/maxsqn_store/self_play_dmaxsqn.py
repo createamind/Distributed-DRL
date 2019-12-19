@@ -146,6 +146,10 @@ class ParameterServer(object):
             self.weights_pool.append(self.weights)
         else:
             self.weights_pool[np.random.choice(self.opt.num_in_pool, 1)[0]] = self.weights
+        # pool_pop_ratio
+        np.random.seed()
+        if np.random.random() < opt.pool_pop_ratio:
+            self.weights_pool.pop(0)
 
     def pool_pull(self, keys):
         # if np.random.random() < 0.2:
