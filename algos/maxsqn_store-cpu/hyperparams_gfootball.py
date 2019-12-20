@@ -67,7 +67,7 @@ class HyperParameters:
         self.a_l_ratio = 23
 
         self.use_max = False
-        self.reward_scale = 160
+        self.reward_scale = 180
         self.alpha = 0.1
         # self.alpha = "auto"
         self.target_entropy = 0.5
@@ -78,7 +78,7 @@ class HyperParameters:
         self.gamma = 0.997
 
         # self.num_buffers = 1
-        self.num_buffers = self.num_workers // 25 + 1
+        self.num_buffers = self.num_workers // 20 + 1
         if self.model == 'cnn':
             self.buffer_size = int(3e4)
         else:

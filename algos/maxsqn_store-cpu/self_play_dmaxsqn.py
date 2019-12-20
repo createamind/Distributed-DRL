@@ -151,6 +151,7 @@ class ParameterServer(object):
         if np.random.random() < opt.pool_pop_ratio:
             self.weights_pool.pop(0)
 
+
     def pool_pull(self, keys):
         # if np.random.random() < 0.2:
         #     worker_weights = self.weights
