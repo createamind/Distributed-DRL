@@ -256,7 +256,7 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
 
         # sides = {'left':0, 'right':1}
         np.random.seed()
-        if np.random.random() > 0.5:
+        if np.random.random() < opt.left_side_ratio:
             our_side = 0
             opp_side = 1
         else:
