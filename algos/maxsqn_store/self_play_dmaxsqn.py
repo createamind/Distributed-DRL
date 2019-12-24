@@ -256,7 +256,6 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
     keys = our_agent.get_weights()[0]
 
     filling_steps = 0
-    mu, sigma = 0, 0.2
 
     # ------ env set up ------
 
@@ -402,9 +401,18 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
 
     agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
+    np.random.seed()
+    rand_buff1 = np.random.choice(opt.num_buffers, 1)[0]
+
+    if opt.recover:
+        learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff1].get_counts.remote())
+        mu = min(learner_steps / opt.mu_speed, 1.0)
+        sigma = 0.2
+    else:
+        mu, sigma = 0, 0.2
 
     filling_steps = 0
-    mu, sigma = 0, 0.2
+
     while True:
         # ------ env set up ------
 
