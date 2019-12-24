@@ -255,7 +255,7 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
     opp_agent = Actor(opt, job="worker")
     keys = our_agent.get_weights()[0]
 
-    filling_steps = 0
+    random_steps = 0
 
     # ------ env set up ------
 
@@ -329,12 +329,12 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
         while True:
 
             # don't need to random sample action if load weights from local.
-            if filling_steps > opt.start_steps or opt.weights_file or opt.recover:
+            if random_steps > opt.start_steps or opt.weights_file or opt.recover:
                 our_opp_actions = [our_agent.get_action(o[our_side], False), opp_agent.get_action(o[opp_side], False)]
                 a = [our_opp_actions[our_side], our_opp_actions[opp_side]]
             else:
                 a = env.action_space.sample()
-                filling_steps += 1
+                random_steps += 1
 
             our_action = a[our_side]
             # left_action = a[0]
@@ -411,7 +411,7 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
     else:
         mu, sigma = 0, 0.2
 
-    filling_steps = 0
+    random_steps = 0
 
     while True:
         # ------ env set up ------
@@ -459,11 +459,11 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
         while True:
 
             # don't need to random sample action if load weights from local.
-            if filling_steps > opt.start_steps or opt.weights_file or opt.recover:
+            if random_steps > opt.start_steps or opt.weights_file or opt.recover:
                 a = agent.get_action(o, deterministic=False)
             else:
                 a = env.action_space.sample()
-                filling_steps += 1
+                random_steps += 1
             # Step the env
             o2, r, d, _ = env.step(a)
 
@@ -587,17 +587,12 @@ if __name__ == '__main__':
         time.sleep(3)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
-    # if opt.weights_file:
-    #     fill_steps = opt.start_steps / 100
-    # else:
-    #     fill_steps = opt.start_steps
-
     if not opt.recover:
         # store at least start_steps in buffer before training
         _, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
-        while size < opt.buffer_size:
+        while size < opt.start_steps:
             _, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
-            print('fill steps before learning:', actor_steps)
+            print('start steps before learning:', size, '/', opt.start_steps)
             time.sleep(1)
     else:
         time.sleep(3)
