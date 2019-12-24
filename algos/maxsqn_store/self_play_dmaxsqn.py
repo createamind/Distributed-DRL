@@ -29,7 +29,7 @@ flags.DEFINE_integer("num_workers", 6, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_string("weights_folder_path", "", "empty means False. ")
-flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
+flags.DEFINE_float("a_l_ratio", 200, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 
 
@@ -50,7 +50,7 @@ class ReplayBuffer:
         self.buffer_r = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
         self.buffer_d = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, opt.buffer_size
-        self.steps, self.sample_times = 0, 0
+        self.actor_steps, self.learner_steps = 0, 0
 
     def store(self, o_queue, a_r_d_queue, worker_index):
 
@@ -69,13 +69,13 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         # TODO
-        self.steps += 1 * self.opt.num_buffers
-        # self.steps += opt.Ln * opt.action_repeat
+        self.actor_steps += 1 * self.opt.num_buffers
+        # self.actor_steps += opt.Ln * opt.action_repeat
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
         # TODO
-        self.sample_times += 1 * self.opt.num_buffers
+        self.learner_steps += 1 * self.opt.num_buffers
 
         return dict(obs=self.buffer_o[idxs],
                     acts=self.buffer_a[idxs],
@@ -83,14 +83,14 @@ class ReplayBuffer:
                     done=self.buffer_d[idxs], )
 
     def get_counts(self):
-        return self.sample_times, self.steps, self.size
+        return self.learner_steps, self.actor_steps, self.size
 
     def save(self):
         np.save(opt.save_dir + "/checkpoint/" + 'buffer_o-' + str(self.buffer_index), self.buffer_o)
         np.save(opt.save_dir + "/checkpoint/" + 'buffer_a-' + str(self.buffer_index), self.buffer_a)
         np.save(opt.save_dir + "/checkpoint/" + 'buffer_r-' + str(self.buffer_index), self.buffer_r)
         np.save(opt.save_dir + "/checkpoint/" + 'buffer_d-' + str(self.buffer_index), self.buffer_d)
-        buffer_counts = np.array((self.ptr, self.size, self.max_size, self.steps, self.sample_times))
+        buffer_counts = np.array((self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps))
         np.save(opt.save_dir + "/checkpoint/" + 'buffer_counts-' + str(self.buffer_index), buffer_counts)
         print("****** buffer " + str(self.buffer_index) + " saved! ******")
 
@@ -103,9 +103,9 @@ class ReplayBuffer:
         self.buffer_r = np.load(opt.save_dir + "/checkpoint/" + 'buffer_r-' + str(self.buffer_index) + '.npy')
         self.buffer_d = np.load(opt.save_dir + "/checkpoint/" + 'buffer_d-' + str(self.buffer_index) + '.npy')
         buffer_counts = np.load(opt.save_dir + "/checkpoint/" + 'buffer_counts-' + str(self.buffer_index) + '.npy')
-        self.ptr, self.size, self.max_size, self.steps, self.sample_times = buffer_counts[0], buffer_counts[1], buffer_counts[2], buffer_counts[3], buffer_counts[4]
+        self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps = buffer_counts[0], buffer_counts[1], buffer_counts[2], buffer_counts[3], buffer_counts[4]
         print("****** buffer number " + str(self.buffer_index) + " restored! ******")
-        print("****** buffer number " + str(self.buffer_index) + " info:", self.ptr, self.size, self.max_size, self.steps, self.sample_times)
+        print("****** buffer number " + str(self.buffer_index) + " info:", self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps)
 
 
 @ray.remote
@@ -491,12 +491,12 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
 
-                sample_times, steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
+                learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
                       'rollout_ep_ret:', ep_ret)
 
                 if mu < 1:
-                    mu = sample_times / opt.mu_speed
+                    mu = learner_steps / opt.mu_speed
                 else:
                     mu = 1
 
@@ -579,17 +579,17 @@ if __name__ == '__main__':
         time.sleep(3)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
-    if opt.weights_file:
-        fill_steps = opt.start_steps / 100
-    else:
-        fill_steps = opt.start_steps
+    # if opt.weights_file:
+    #     fill_steps = opt.start_steps / 100
+    # else:
+    #     fill_steps = opt.start_steps
 
     if not opt.recover:
         # store at least start_steps in buffer before training
-        _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
-        while steps < fill_steps:
-            _, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
-            print('fill steps before learning:', steps)
+        _, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
+        while size < opt.buffer_size:
+            _, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
+            print('fill steps before learning:', actor_steps)
             time.sleep(1)
     else:
         time.sleep(3)
