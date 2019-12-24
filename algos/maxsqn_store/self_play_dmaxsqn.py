@@ -28,6 +28,7 @@ flags.DEFINE_string("exp_name", "Exp2", "experiments name")
 flags.DEFINE_integer("num_workers", 6, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
+flags.DEFINE_string("weights_folder_path", "", "empty means False. ")
 flags.DEFINE_float("a_l_ratio", 200, "steps / sample_times")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 
@@ -113,6 +114,15 @@ class ParameterServer(object):
         # These values will be mutated, so we must create a copy that is not
         # backed by the object store.
         self.opt = opt
+        self.weights_pool = []
+
+        if opt.recover:
+            with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights.pickle", "rb") as pickle_in:
+                self.weights = pickle.load(pickle_in)
+                print("****** weights restored! ******")
+            with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights_pool.pickle", "rb") as pickle_in:
+                self.weights_pool = pickle.load(pickle_in)
+                print("****** weights pool restored! ******")
 
         if weights_file:
             try:
@@ -124,14 +134,8 @@ class ParameterServer(object):
                 print(weights_file)
                 print("------ error: weights file doesn't exist! ------")
                 exit()
-        elif opt.recover:
-            with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights.pickle", "rb") as pickle_in:
-                self.weights = pickle.load(pickle_in)
-                print("****** weights restored! ******")
-            with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights_pool.pickle", "rb") as pickle_in:
-                self.weights_pool = pickle.load(pickle_in)
-                print("****** weights pool restored! ******")
-        else:
+
+        if not opt.recover and not weights_file:
             values = [value.copy() for value in values]
             self.weights = dict(zip(keys, values))
             self.weights_pool = [self.weights]
@@ -141,11 +145,13 @@ class ParameterServer(object):
         for key, value in zip(keys, values):
             self.weights[key] = value
 
-    def pool_push(self):
+    def pool_push(self, weights=None):
+        if not weights:
+            weights = self.weights
         if len(self.weights_pool) < self.opt.num_in_pool:
-            self.weights_pool.append(self.weights)
+            self.weights_pool.append(weights)
         else:
-            self.weights_pool[np.random.choice(self.opt.num_in_pool, 1)[0]] = self.weights
+            self.weights_pool[np.random.choice(self.opt.num_in_pool, 1)[0]] = weights
         # pool_pop_ratio
         np.random.seed()
         if np.random.random() < opt.pool_pop_ratio:
@@ -171,6 +177,17 @@ class ParameterServer(object):
         with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights_pool.pickle", "wb") as pickle_out:
             pickle.dump(self.weights_pool, pickle_out)
         print("****** checkpoint weights and weights_pool saved! ******")
+
+
+def load_weights_in_pool(ps, weights_folder_path):
+    import os
+    weights_names = os.listdir(weights_folder_path)
+    for weights_name in weights_names:
+        with open(weights_folder_path+"/"+weights_name, "rb") as pickle_in:
+            weights = pickle.load(pickle_in)
+            ps.pool_push.remote(weights=weights)
+            print(weights_name, "in")
+    print("load_weights_in_pool all done")
 
 
 class Cache(object):
@@ -538,6 +555,9 @@ if __name__ == '__main__':
         net = Learner(opt, job="main")
         all_keys, all_values = net.get_weights()
         ps = ParameterServer.remote(opt, all_keys, all_values)
+
+    if FLAGS.weights_folder_path:
+        load_weights_in_pool(ps, FLAGS.weights_folder_path)
 
     # Experience buffer
     # Methods called on different actors can execute in parallel,
