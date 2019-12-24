@@ -29,6 +29,7 @@ flags.DEFINE_integer("num_workers", 6, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_string("weights_folder_path", "", "empty means False. ")
+flags.DEFINE_string("ext_weights_folder_path", "", "empty means False. ")
 flags.DEFINE_float("a_l_ratio", 200, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 
@@ -115,6 +116,7 @@ class ParameterServer(object):
         # backed by the object store.
         self.opt = opt
         self.weights_pool = []
+        self.ext_weights_pool = []
 
         if opt.recover:
             with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights.pickle", "rb") as pickle_in:
@@ -164,6 +166,20 @@ class ParameterServer(object):
         worker_weights = self.weights_pool[np.random.choice(len(self.weights_pool), 1)[0]]
         return [worker_weights[key] for key in keys]
 
+    def ext_pool_pull(self, keys):
+        worker_weights = self.ext_weights_pool[np.random.choice(len(self.ext_weights_pool), 1)[0]]
+        return [worker_weights[key] for key in keys]
+
+    def load_ext_pool(self, ext_weights_folder_path):
+        import os
+        weights_names = os.listdir(ext_weights_folder_path)
+        for weights_name in weights_names:
+            with open(ext_weights_folder_path + "/" + weights_name, "rb") as pickle_in:
+                weights = pickle.load(pickle_in)
+                self.ext_weights_pool.append(weights)
+                print(weights_name, "in")
+        print("load_weights_in_pool all done")
+
     def pull(self, keys):
         return [self.weights[key] for key in keys]
 
@@ -187,7 +203,7 @@ def load_weights_in_pool(ps, weights_folder_path):
             weights = pickle.load(pickle_in)
             ps.pool_push.remote(weights=weights)
             print(weights_name, "in")
-    print("load_weights_in_pool all done")
+    print("load ext weights in pool all done")
 
 
 class Cache(object):
@@ -313,12 +329,16 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
         ################################## deques reset
 
         weights = ray.get(ps.pull.remote(keys))
-        is_self_play = True
+        is_self_play = "self_play"
         our_agent.set_weights(keys, weights)
         np.random.seed()
         if np.random.random() > opt.self_play_probability:
             weights = ray.get(ps.pool_pull.remote(keys))
-            is_self_play = False
+            is_self_play = "self pool"
+        elif np.random.random() > opt.ext_pool_probability:
+            weights = ray.get(ps.ext_pool_pull.remote(keys))
+            is_self_play = "ext pool"
+
         opp_agent.set_weights(keys, weights)
 
         # for a_l_ratio control
@@ -566,6 +586,9 @@ if __name__ == '__main__':
 
     if FLAGS.weights_folder_path:
         load_weights_in_pool(ps, FLAGS.weights_folder_path)
+
+    if FLAGS.ext_weights_folder_path:
+        ps.load_ext_pool.remote(FLAGS.ext_weights_folder_path)
 
     # Experience buffer
     # Methods called on different actors can execute in parallel,

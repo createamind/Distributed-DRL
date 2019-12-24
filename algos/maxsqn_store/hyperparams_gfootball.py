@@ -62,6 +62,7 @@ class HyperParameters:
 
         self.bot_worker_ratio = 0.5
         self.self_play_probability = 0.0  # same-weight self-play ratio
+        self.ext_pool_probability = 0.0
         self.pool_push_freq = int(1e4)
         self.a_l_ratio = 20
 
