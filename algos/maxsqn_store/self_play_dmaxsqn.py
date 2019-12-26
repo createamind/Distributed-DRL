@@ -427,7 +427,7 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
     if opt.recover:
         learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff1].get_counts.remote())
         mu = min(learner_steps / opt.mu_speed, 1.0)
-        sigma = 0.2
+        sigma = 0.15
     else:
         mu, sigma = 0, 0.2
 
