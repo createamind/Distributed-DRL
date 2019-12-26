@@ -32,6 +32,7 @@ flags.DEFINE_string("weights_folder_path", "", "empty means False. ")
 flags.DEFINE_string("ext_weights_folder_path", "", "empty means False. ")
 flags.DEFINE_float("a_l_ratio", 200, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
+flags.DEFINE_string("checkpoint_path", "", "empty means opt.save_dir. ")
 
 
 @ray.remote(num_cpus=2)
@@ -95,15 +96,17 @@ class ReplayBuffer:
         np.save(opt.save_dir + "/checkpoint/" + 'buffer_counts-' + str(self.buffer_index), buffer_counts)
         print("****** buffer " + str(self.buffer_index) + " saved! ******")
 
-    def load(self):
+    def load(self, checkpoint_path):
+        if not checkpoint_path:
+            checkpoint_path = opt.save_dir + "/checkpoint"
         if opt.obs_shape != (115,):
-            self.buffer_o = np.load(opt.save_dir + "/checkpoint/" + 'buffer_o-' + str(self.buffer_index) + '.npy')
+            self.buffer_o = np.load(checkpoint_path + '/buffer_o-' + str(self.buffer_index) + '.npy')
         else:
-            self.buffer_o = np.load(opt.save_dir + "/checkpoint/" + 'buffer_o-' + str(self.buffer_index) + '.npy')
-        self.buffer_a = np.load(opt.save_dir + "/checkpoint/" + 'buffer_a-' + str(self.buffer_index) + '.npy')
-        self.buffer_r = np.load(opt.save_dir + "/checkpoint/" + 'buffer_r-' + str(self.buffer_index) + '.npy')
-        self.buffer_d = np.load(opt.save_dir + "/checkpoint/" + 'buffer_d-' + str(self.buffer_index) + '.npy')
-        buffer_counts = np.load(opt.save_dir + "/checkpoint/" + 'buffer_counts-' + str(self.buffer_index) + '.npy')
+            self.buffer_o = np.load(checkpoint_path + '/buffer_o-' + str(self.buffer_index) + '.npy')
+        self.buffer_a = np.load(checkpoint_path + '/buffer_a-' + str(self.buffer_index) + '.npy')
+        self.buffer_r = np.load(checkpoint_path + '/buffer_r-' + str(self.buffer_index) + '.npy')
+        self.buffer_d = np.load(checkpoint_path + '/buffer_d-' + str(self.buffer_index) + '.npy')
+        buffer_counts = np.load(checkpoint_path + '/buffer_counts-' + str(self.buffer_index) + '.npy')
         self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps = buffer_counts[0], buffer_counts[1], buffer_counts[2], buffer_counts[3], buffer_counts[4]
         print("****** buffer number " + str(self.buffer_index) + " restored! ******")
         print("****** buffer number " + str(self.buffer_index) + " info:", self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps)
@@ -111,18 +114,21 @@ class ReplayBuffer:
 
 @ray.remote
 class ParameterServer(object):
-    def __init__(self, opt, keys, values, weights_file=""):
+    def __init__(self, opt, keys, values, weights_file="", checkpoint_path=""):
         # These values will be mutated, so we must create a copy that is not
         # backed by the object store.
         self.opt = opt
         self.weights_pool = []
         self.ext_weights_pool = []
 
+        if not checkpoint_path:
+            checkpoint_path = opt.save_dir + "/checkpoint"
+
         if opt.recover:
-            with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights.pickle", "rb") as pickle_in:
+            with open(checkpoint_path + "/checkpoint_weights.pickle", "rb") as pickle_in:
                 self.weights = pickle.load(pickle_in)
                 print("****** weights restored! ******")
-            with open(opt.save_dir + "/checkpoint/" + "checkpoint_weights_pool.pickle", "rb") as pickle_in:
+            with open(checkpoint_path + "/checkpoint_weights_pool.pickle", "rb") as pickle_in:
                 self.weights_pool = pickle.load(pickle_in)
                 print("****** weights pool restored! ******")
 
@@ -578,7 +584,7 @@ if __name__ == '__main__':
     # ------ end ------
 
     if FLAGS.weights_file or FLAGS.recover:
-        ps = ParameterServer.remote(opt, [], [], weights_file=FLAGS.weights_file)
+        ps = ParameterServer.remote(opt, [], [], weights_file=FLAGS.weights_file, checkpoint_path=FLAGS.checkpoint_path)
     else:
         net = Learner(opt, job="main")
         all_keys, all_values = net.get_weights()
@@ -597,7 +603,7 @@ if __name__ == '__main__':
     replay_buffer = [ReplayBuffer.remote(opt, i) for i in range(opt.num_buffers)]
 
     if FLAGS.recover:
-        buffer_load_op = [replay_buffer[i].load.remote() for i in range(opt.num_buffers)]
+        buffer_load_op = [replay_buffer[i].load.remote(FLAGS.checkpoint_path) for i in range(opt.num_buffers)]
         ray.wait(buffer_load_op, num_returns=opt.num_buffers)
 
     # Start some training tasks.
