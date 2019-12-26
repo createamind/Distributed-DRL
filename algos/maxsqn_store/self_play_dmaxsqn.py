@@ -332,7 +332,7 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
         is_self_play = "self_play"
         our_agent.set_weights(keys, weights)
         np.random.seed()
-        if np.random.random() > opt.self_play_probability:
+        if np.random.random() < opt.self_pool_probability:
             weights = ray.get(ps.pool_pull.remote(keys))
             is_self_play = "self pool"
         elif np.random.random() < opt.ext_pool_probability:
