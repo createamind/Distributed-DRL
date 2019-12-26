@@ -12,9 +12,9 @@ Our framework:
 
 Tutorial
 
-- [Parallelize your algorithm by Ray (1)](tutorial/Parallelize your algorithm by Ray (1).md)
-- [Parallelize your algorithm by Ray (2)](tutorial/Parallelize your algorithm by Ray (2).md)
-- [Parallelize your algorithm by Ray (3)](tutorial/Parallelize your algorithm by Ray (3).md)
+- [Parallelize your algorithm by Ray (1)](tutorial/Parallelize%20your%20algorithm%20by%20Ray%20(1).md)
+- [Parallelize your algorithm by Ray (2)](tutorial/Parallelize%20your%20algorithm%20by%20Ray%20(2).md)
+- [Parallelize your algorithm by Ray (3)](tutorial/Parallelize%20your%20algorithm%20by%20Ray%20(3).md)
 
 ---
 
