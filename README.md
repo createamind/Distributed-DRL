@@ -8,6 +8,16 @@ Rapid framework:
 Our framework:
 ![ddrlframework](./pictures/ddrlframework.jpg)
 
+---
+
+Tutorial
+
+- [Parallelize your algorithm by Ray (1)] (Tutorial/Parallelize your algorithm by Ray (1).md)
+- [Parallelize your algorithm by Ray (2)] (Tutorial/Parallelize your algorithm by Ray (2).md)
+- [Parallelize your algorithm by Ray (3)] (Tutorial/Parallelize your algorithm by Ray (3).md)
+
+---
+
 This framework divides the reinforcement learning process into five parts:
 
 - Replay buffer (option)
