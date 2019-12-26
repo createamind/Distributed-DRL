@@ -65,6 +65,8 @@ class HyperParameters:
         ext_pool = 0.3
         self_play = 0.2
 
+        assert bot + self_pool + ext_pool + self_play == 1.0
+
         self.bot_worker_ratio = bot
         self.self_pool_probability = self_pool/(self_pool+ext_pool+self_play)  # same-weight self-play ratio
         self.ext_pool_probability = ext_pool/(ext_pool+self_play)
