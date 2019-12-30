@@ -71,7 +71,7 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         # TODO
-        self.actor_steps += self.buffer_store_len * self.opt.num_buffers
+        self.actor_steps += self.opt.buffer_store_len * self.opt.num_buffers
         # self.actor_steps += self.buffer_store_len * self.action_repeat * self.opt.num_buffers
         # self.actor_steps += opt.Ln * opt.action_repeat
 

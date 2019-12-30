@@ -86,7 +86,7 @@ class HyperParameters:
         self.gamma = 0.997
 
         # self.num_buffers = 1
-        self.num_buffers = self.num_workers // 20 + 1
+        self.num_buffers = self.num_workers // 50 + 1
         if self.model == 'cnn':
             self.buffer_size = int(3e4)
         else:
@@ -94,7 +94,7 @@ class HyperParameters:
 
         self.buffer_size = self.buffer_size // self.num_buffers
 
-        self.start_steps = int(1e2) // self.num_buffers
+        self.start_steps = int(33) // self.num_buffers
         if self.weights_file:
             self.start_steps = self.buffer_size
 
@@ -104,8 +104,8 @@ class HyperParameters:
         self.steps_per_epoch = 5000
         self.batch_size = 256
 
-        self.Ln = 5
-        self.action_repeat = 3
+        self.Ln = 15
+        self.action_repeat = 1
         self.max_ep_len = 2990
         self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
 
