@@ -76,14 +76,17 @@ class ReplayBuffer:
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
-        last_one = int((self.opt.max_ep_len-self.opt.max_ep_len % self.opt.action_repeat + self.opt.action_repeat)-self.opt.Ln)
-        idxs2 = np.random.randint(0, last_one, size=1)[0]
+        idxs2 = np.random.randint(0, self.opt.buffer_store_len-self.opt.Ln, size=1)[0]
 
-        # TODO
-        self.learner_steps += 1 * self.opt.num_buffers
+        # print(self.opt.buffer_store_len)
+        # self.learner_steps += 1 * self.opt.num_buffers
+        # print(idxs2)
+        # print(self.buffer_o.shape)
+        # obs = self.buffer_o[idxs][:, idxs2:idxs2 + self.opt.Ln]
+        # print(obs.shape)
 
         # buffer_o shape: (buffer size, max_ep_len, obs)
-        return dict(obs=self.buffer_o[idxs][:, idxs2:idxs2+self.opt.Ln],
+        return dict(obs=self.buffer_o[idxs][:, idxs2:idxs2+self.opt.Ln+1],
                     acts=self.buffer_a[idxs][:, idxs2:idxs2+self.opt.Ln],
                     rews=self.buffer_r[idxs][:, idxs2:idxs2+self.opt.Ln],
                     done=self.buffer_d[idxs][:, idxs2:idxs2+self.opt.Ln], )
