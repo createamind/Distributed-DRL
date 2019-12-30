@@ -45,12 +45,12 @@ class ReplayBuffer:
         self.opt = opt
         self.buffer_index = buffer_index
         if opt.obs_shape != (115,):
-            self.buffer_o = np.array([['0' * 2000] * (opt.Ln + 1)] * opt.buffer_size, dtype=np.str)
+            self.buffer_o = np.array([['0' * 2000] * (opt.buffer_store_len + 1)] * opt.buffer_size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((opt.buffer_size, opt.Ln + 1) + opt.obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((opt.buffer_size, opt.Ln) + opt.act_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
-        self.buffer_d = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
+            self.buffer_o = np.zeros((opt.buffer_size, opt.buffer_store_len+1) + opt.obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((opt.buffer_size, opt.buffer_store_len) + opt.act_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((opt.buffer_size, opt.buffer_store_len), dtype=np.float32)
+        self.buffer_d = np.zeros((opt.buffer_size, opt.buffer_store_len), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, opt.buffer_size
         self.actor_steps, self.learner_steps = 0, 0
 
@@ -76,13 +76,17 @@ class ReplayBuffer:
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
+        last_one = int((self.opt.max_ep_len-self.opt.max_ep_len % self.opt.action_repeat + self.opt.action_repeat)-self.opt.Ln)
+        idxs2 = np.random.randint(0, last_one, size=1)[0]
+
         # TODO
         self.learner_steps += 1 * self.opt.num_buffers
 
-        return dict(obs=self.buffer_o[idxs],
-                    acts=self.buffer_a[idxs],
-                    rews=self.buffer_r[idxs],
-                    done=self.buffer_d[idxs], )
+        # buffer_o shape: (buffer size, max_ep_len, obs)
+        return dict(obs=self.buffer_o[idxs][:, idxs2:idxs2+self.opt.Ln],
+                    acts=self.buffer_a[idxs][:, idxs2:idxs2+self.opt.Ln],
+                    rews=self.buffer_r[idxs][:, idxs2:idxs2+self.opt.Ln],
+                    done=self.buffer_d[idxs][:, idxs2:idxs2+self.opt.Ln], )
 
     def get_counts(self):
         return self.learner_steps, self.actor_steps, self.size
@@ -302,8 +306,8 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
 
         ################################## deques
 
-        our_o_queue = deque([], maxlen=opt.Ln + 1)
-        our_a_r_d_queue = deque([], maxlen=opt.Ln)
+        our_o_queue = []
+        our_a_r_d_queue = []
 
         # left_o_queue = deque([], maxlen=opt.Ln + 1)
         # left_a_r_d_queue = deque([], maxlen=opt.Ln)
@@ -316,7 +320,6 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
         o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
         ################################## deques reset
-        t_queue = 1
 
         our_o = o[our_side]
         # left_o = o[0]
@@ -396,19 +399,11 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
                 # left_o_queue.append((left_o2,))
                 # right_o_queue.append((right_o2,))
 
-            # scheme 1:
-            # TODO  and t_queue % 2 == 0: %1 lead to q smaller
-            if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(our_o_queue, our_a_r_d_queue,
-                                                                                    worker_index)
-                # replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(right_o_queue, right_a_r_d_queue, worker_index)
-
-            t_queue += 1
-
-            #################################### deques store
-
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(our_o_queue, our_a_r_d_queue,
+                                                                                    worker_index)
                 learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
@@ -556,7 +551,7 @@ def worker_test(ps, replay_buffer, opt):
 
 if __name__ == '__main__':
 
-    # ray.init(object_store_memory=1000000000, redis_max_memory=1000000000)
+    # ray.init(object_store_memory=20000000000, redis_max_memory=5000000000, driver_object_store_memory=6000000000)
     ray.init()
 
     # ------ HyperParameters ------
