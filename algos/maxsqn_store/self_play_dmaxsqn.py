@@ -87,10 +87,11 @@ class ReplayBuffer:
         # print(obs.shape)
 
         # buffer_o shape: (buffer size, max_ep_len, obs)
-        return dict(obs=self.buffer_o[idxs][:, idxs2:idxs2+self.opt.Ln+1],
-                    acts=self.buffer_a[idxs][:, idxs2:idxs2+self.opt.Ln],
-                    rews=self.buffer_r[idxs][:, idxs2:idxs2+self.opt.Ln],
-                    done=self.buffer_d[idxs][:, idxs2:idxs2+self.opt.Ln], )
+        # speed up slice using fancy indexing and broadcasting
+        return dict(obs=self.buffer_o[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln + 1)],
+                    acts=self.buffer_a[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)],
+                    rews=self.buffer_r[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)],
+                    done=self.buffer_d[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)], )
 
     def get_counts(self):
         return self.learner_steps, self.actor_steps, self.size
@@ -192,7 +193,7 @@ class ParameterServer(object):
                 weights = pickle.load(pickle_in)
                 self.ext_weights_pool.append(weights)
                 print(weights_name, "in")
-        print("load_weights_in_pool all done")
+        print("load ext weights in pool all done")
 
     def pull(self, keys):
         return [self.weights[key] for key in keys]
@@ -217,7 +218,7 @@ def load_weights_in_pool(ps, weights_folder_path):
             weights = pickle.load(pickle_in)
             ps.pool_push.remote(weights=weights)
             print(weights_name, "in")
-    print("load ext weights in pool all done")
+    print("load weights in pool all done")
 
 
 class Cache(object):
