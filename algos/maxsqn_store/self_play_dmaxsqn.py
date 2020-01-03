@@ -155,7 +155,7 @@ class ParameterServer(object):
         if not opt.recover and not weights_file:
             values = [value.copy() for value in values]
             self.weights = dict(zip(keys, values))
-            self.weights_pool = [self.weights]
+            self.weights_pool = [copy.deepcopy(self.weights)]
 
     def push(self, keys, values):
         values = [value.copy() for value in values]
@@ -164,7 +164,7 @@ class ParameterServer(object):
 
     def pool_push(self, weights=None):
         if not weights:
-            weights = self.weights
+            weights = copy.deepcopy(self.weights)
         if len(self.weights_pool) < self.opt.num_in_pool:
             self.weights_pool.append(weights)
         else:
@@ -199,7 +199,7 @@ class ParameterServer(object):
         return [self.weights[key] for key in keys]
 
     def get_weights(self):
-        return self.weights
+        return copy.deepcopy(self.weights)
 
     # save weights to disk
     def save_weights(self):
