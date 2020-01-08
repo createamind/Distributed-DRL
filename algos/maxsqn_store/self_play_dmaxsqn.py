@@ -457,15 +457,15 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
 
         ################################## deques
 
-        o_queue = deque([], maxlen=opt.Ln + 1)
-        a_r_d_queue = deque([], maxlen=opt.Ln)
+        o_queue = []
+        a_r_d_queue = []
 
         ################################## deques
 
         o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
         ################################## deques reset
-        t_queue = 1
+
         if opt.model == "cnn":
             compressed_o = pack(o)
             o_queue.append((compressed_o,))
@@ -512,18 +512,13 @@ def worker_rollout_bot(ps, replay_buffer, opt, worker_index):
             else:
                 o_queue.append((o2,))
 
-            # scheme 1:
-            # TODO  and t_queue % 2 == 0: %1 lead to q smaller
-            # TODO
-            if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
-
-            t_queue += 1
-
             #################################### deques store
 
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue,
+                                                                                    worker_index)
 
                 learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'mu:', mu, 'using_difficulty:', using_difficulty,
