@@ -45,8 +45,6 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.a_l_ratio = 200
-
         self.use_max = False
         self.reward_scale = 100
 
@@ -77,7 +75,7 @@ class HyperParameters:
         self.steps_per_epoch = 5000
         self.batch_size = 100
 
-        self.Ln = 3
+        self.Ln = 1
         self.action_repeat = 1
         self.max_ep_len = 2990
         # self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)

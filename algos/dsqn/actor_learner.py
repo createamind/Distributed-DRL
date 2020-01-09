@@ -166,7 +166,7 @@ class Learner(object):
                      }
 
         outs = self.sess.run(self.step_ops, feed_dict)
-        if cnt % 300 == 0:
+        if cnt % 500 == 0:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
@@ -275,6 +275,7 @@ class Actor(object):
 
         keys, _ = self.get_weights()
         save_times = 0
+        checkpoint_time = 0
         max_ret = -10000
         start_time = time.time()
 
@@ -309,15 +310,17 @@ class Actor(object):
             learner_steps, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
             time_now = time.time()
             update_frequency = (learner_steps - last_learner_steps) / (time_now - last_time)
-            a_l_ratio = str((actor_steps - last_actor_steps) / (learner_steps - last_learner_steps))[:4]
+            a_l_ratio = str((actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1))[:4]
+            total_time = time_now - start_time
 
             print("----------------------------------")
+            print("| exp_name:", opt.exp_name)
             print("| test_reward:", test_reward)
             print("| learner_steps:", last_learner_steps)
             print("| actor_steps:", last_actor_steps)
             print("| buffer_size:", size)
             print("| actual a_l_ratio:", a_l_ratio)
-            print('- update frequency:', update_frequency, 'total time:', time_now - start_time)
+            print('- update frequency:', update_frequency, 'total time (hrs):', total_time/3600)
             print("----------------------------------")
 
             if last_learner_steps // opt.save_interval > save_times:
@@ -333,6 +336,15 @@ class Actor(object):
                     pickle.dump(weights_all, pickle_out)
                     print("****** Weights saved by maxret! ******")
                 max_ret = test_reward
+
+            # save everything every 6 hours
+            if total_time // opt.checkpoint_freq > checkpoint_time:
+                save_start_time = time.time()
+                buffer_save_op = [replay_buffer[i].save.remote() for i in range(opt.num_buffers)]
+                ps_save_op = ps.save_weights.remote()
+                ray.wait(buffer_save_op + [ps_save_op], num_returns=opt.num_buffers+1)
+                print("total time for saving :", time.time()-save_start_time)
+                checkpoint_time = total_time // opt.checkpoint_freq
 
             last_time = time_now
             last_learner_steps = learner_steps

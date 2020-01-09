@@ -22,7 +22,7 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
-flags.DEFINE_string("exp_name", "Exp1W1", "experiments name")
+flags.DEFINE_string("exp_name", "Exp1W111", "experiments name")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
@@ -213,14 +213,14 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
     cnt = 1
     while True:
-        time1 = time.time()
+        # time1 = time.time()
         batch = cache.q1.get()
-        time2 = time.time()
+        # time2 = time.time()
         # print('cache get time:', time2-time1)
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
-        time3 = time.time()
+        # time3 = time.time()
         # print('agent train time:', time3 - time2)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
