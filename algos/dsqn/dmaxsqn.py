@@ -3,6 +3,7 @@ import tensorflow as tf
 import time
 import ray
 import gym
+from collections import deque
 
 from hyperparams import HyperParameters, Wrapper
 from actor_learner import Actor, Learner
@@ -21,13 +22,13 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
-flags.DEFINE_string("exp_name", "Exp1", "experiments name")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_string("exp_name", "Exp1W1", "experiments name")
+flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_string("weights_folder_path", "", "empty means False. ")
 flags.DEFINE_string("ext_weights_folder_path", "", "empty means False. ")
-flags.DEFINE_float("a_l_ratio", 200, "actor_steps / learner_steps")
+flags.DEFINE_float("a_l_ratio", 10, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 flags.DEFINE_string("checkpoint_path", "", "empty means opt.save_dir. ")
 
@@ -42,12 +43,12 @@ class ReplayBuffer:
         self.opt = opt
         self.buffer_index = buffer_index
         if opt.model == "cnn":
-            self.buffer_o = np.array([['0' * 2000] * (opt.buffer_store_len + 1)] * opt.buffer_size, dtype=np.str)
+            self.buffer_o = np.array([['0' * 2000] * (opt.Ln + 1)] * opt.buffer_size, dtype=np.str)
         else:
-            self.buffer_o = np.zeros((opt.buffer_size, opt.buffer_store_len+1) + opt.obs_shape, dtype=np.float32)
-        self.buffer_a = np.zeros((opt.buffer_size, opt.buffer_store_len) + opt.act_shape, dtype=np.float32)
-        self.buffer_r = np.zeros((opt.buffer_size, opt.buffer_store_len), dtype=np.float32)
-        self.buffer_d = np.zeros((opt.buffer_size, opt.buffer_store_len), dtype=np.float32)
+            self.buffer_o = np.zeros((opt.buffer_size, opt.Ln + 1) + opt.obs_shape, dtype=np.float32)
+        self.buffer_a = np.zeros((opt.buffer_size, opt.Ln) + opt.act_shape, dtype=np.float32)
+        self.buffer_r = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
+        self.buffer_d = np.zeros((opt.buffer_size, opt.Ln), dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, opt.buffer_size
         self.actor_steps, self.learner_steps = 0, 0
 
@@ -68,22 +69,26 @@ class ReplayBuffer:
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         # TODO
-        self.actor_steps += self.opt.buffer_store_len * self.opt.num_buffers
+        self.actor_steps += self.opt.num_buffers
         # self.actor_steps += self.buffer_store_len * self.action_repeat * self.opt.num_buffers
         # self.actor_steps += opt.Ln * opt.action_repeat
 
     def sample_batch(self):
         idxs = np.random.randint(0, self.size, size=self.opt.batch_size)
-        idxs2 = np.random.randint(0, self.opt.buffer_store_len-self.opt.Ln, size=1)[0]
+        # idxs2 = np.random.randint(0, self.opt.buffer_store_len-self.opt.Ln, size=1)[0]
 
         self.learner_steps += 1 * self.opt.num_buffers
 
         # buffer_o shape: (buffer size, max_ep_len, obs)
         # speed up slice using fancy indexing and broadcasting
-        return dict(obs=self.buffer_o[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln + 1)],
-                    acts=self.buffer_a[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)],
-                    rews=self.buffer_r[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)],
-                    done=self.buffer_d[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)], )
+        # return dict(obs=self.buffer_o[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln + 1)],
+        #             acts=self.buffer_a[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)],
+        #             rews=self.buffer_r[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)],
+        #             done=self.buffer_d[idxs[:, None], np.arange(idxs2, idxs2 + self.opt.Ln)], )
+        return dict(obs=self.buffer_o[idxs],
+                    acts=self.buffer_a[idxs],
+                    rews=self.buffer_r[idxs],
+                    done=self.buffer_d[idxs], )
 
     def get_counts(self):
         return self.learner_steps, self.actor_steps, self.size
@@ -177,7 +182,7 @@ class Cache(object):
         q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            print(q1.qsize())
+            # print(q1.qsize())
             if q1.qsize() < 10:
                 q1.put(copy.deepcopy(
                     ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
@@ -211,17 +216,15 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         time1 = time.time()
         batch = cache.q1.get()
         time2 = time.time()
-        print('cache get time:', time2-time1)
+        # print('cache get time:', time2-time1)
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         agent.train(batch, cnt)
         time3 = time.time()
-        print('agent train time:', time3 - time2)
+        # print('agent train time:', time3 - time2)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
-        if cnt % opt.pool_push_freq == 0:
-            ps.pool_push.remote()
         cnt += 1
 
 
@@ -238,13 +241,12 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     while True:
         # ------ env set up ------
 
-
         env = gym.make(opt.env_name)
         # env = Wrapper(env, opt.action_repeat, opt.reward_scale)
         # ------ env set up end ------
 
-        o_queue = []
-        a_r_d_queue = []
+        o_queue = deque([], maxlen=opt.Ln + 1)
+        a_r_d_queue = deque([], maxlen=opt.Ln)
 
         o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
@@ -253,6 +255,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             o_queue.append((compressed_o,))
         else:
             o_queue.append((o,))
+
+        t_queue = 1
 
         weights = ray.get(ps.pull.remote(keys))
         agent.set_weights(keys, weights)
@@ -290,21 +294,44 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             else:
                 o_queue.append((o2,))
 
+            # scheme 1:
+            # TODO  and t_queue % 2 == 0: %1 lead to q smaller
+            # TODO
+            if t_queue >= opt.Ln and t_queue % opt.save_freq == 0:
+                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue, worker_index)
+
+            t_queue += 1
+
             # End of episode. Training (ep_len times).
-            if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+            # if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
+            if d:
+                sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(o_queue, a_r_d_queue,
-                                                                                    worker_index)
-
-                learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
+
+                if steps > opt.start_steps:
+                    # update parameters every episode
+                    weights = ray.get(ps.pull.remote(keys))
+                    agent.set_weights(keys, weights)
+
+                o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+
+
+                t_queue = 1
+                if opt.model == "cnn":
+                    compressed_o = pack(o)
+                    o_queue.append((compressed_o,))
+                else:
+                    o_queue.append((o,))
+
+
 
                 # for a_l_ratio control
                 learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
+
                 while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
                     time.sleep(1)
                     learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
-                break
 
 
 @ray.remote
