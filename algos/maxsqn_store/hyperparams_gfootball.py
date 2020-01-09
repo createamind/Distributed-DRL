@@ -61,10 +61,10 @@ class HyperParameters:
 
         self.left_side_ratio = 1
 
-        bot = 0.0
-        self_pool = 0.5
+        bot = 0.12
+        self_pool = 0.18
         ext_pool = 0.0
-        self_play = 0.5
+        self_play = 0.7
 
         assert bot + self_pool + ext_pool + self_play == 1.0
 
@@ -72,10 +72,10 @@ class HyperParameters:
         self.self_pool_probability = self_pool/(self_pool+ext_pool+self_play)  # same-weight self-play ratio
         self.ext_pool_probability = ext_pool/(ext_pool+self_play)
         self.pool_push_freq = int(1e4)
-        self.a_l_ratio = 200
+        self.a_l_ratio = 20000000
 
         self.use_max = False
-        self.reward_scale = 700
+        self.reward_scale = 180
         self.alpha = 0.1
         # self.alpha = "auto"
         self.target_entropy = 0.5
@@ -86,7 +86,7 @@ class HyperParameters:
         self.gamma = 0.997
 
         # self.num_buffers = 1
-        self.num_buffers = self.num_workers // 50 + 1
+        self.num_buffers = self.num_workers // 25 + 1
         if self.model == 'cnn':
             self.buffer_size = int(3e4)
         else:
@@ -104,8 +104,8 @@ class HyperParameters:
         self.steps_per_epoch = 5000
         self.batch_size = 256
 
-        self.Ln = 15
-        self.action_repeat = 1
+        self.Ln = 5
+        self.action_repeat = 3
         self.max_ep_len = 2990
         self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
 
