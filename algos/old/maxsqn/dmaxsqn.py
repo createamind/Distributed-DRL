@@ -23,7 +23,7 @@ flags.DEFINE_integer("total_epochs", 500, "total_epochs")
 flags.DEFINE_integer("num_workers", 1, "number of workers")
 flags.DEFINE_integer("num_learners", 1, "number of learners")
 flags.DEFINE_string("is_restore", "False", "True or False. True means restore weights from pickle file.")
-flags.DEFINE_float("a_l_ratio", 1, "steps / sample_times")
+flags.DEFINE_float("a_l_ratio", 10, "steps / sample_times")
 
 
 @ray.remote
