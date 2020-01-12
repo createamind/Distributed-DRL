@@ -2,7 +2,7 @@ import numpy as np
 import os
 import sys
 from gym.spaces import Box
-import datetime
+import datetime, copy
 import gfootball.env as football_env
 from numbers import Number
 from math import ceil
@@ -61,10 +61,10 @@ class HyperParameters:
 
         self.left_side_ratio = 1
 
-        bot = 0.12
-        self_pool = 0.18
+        bot = 0.0
+        self_pool = 0.2
         ext_pool = 0.0
-        self_play = 0.7
+        self_play = 0.8
 
         assert bot + self_pool + ext_pool + self_play == 1.0
 
@@ -98,7 +98,7 @@ class HyperParameters:
         if self.weights_file:
             self.start_steps = self.buffer_size
 
-        self.lr = 5e-5
+        self.lr = 4e-5
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
@@ -148,7 +148,8 @@ class FootballWrapper(object):
     def step(self, action):
         r = 0.0
         for _ in range(self.action_repeat):
-            obs, reward, done, info = self._env.step(action)
+            act = copy.deepcopy(action)
+            obs, reward, done, info = self._env.step(act)
 
             r += reward
 
