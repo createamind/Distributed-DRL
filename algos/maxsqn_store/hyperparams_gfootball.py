@@ -148,7 +148,13 @@ class FootballWrapper(object):
     def step(self, action):
         r = 0.0
         for _ in range(self.action_repeat):
-            act = copy.deepcopy(action)
+            
+            np.random.seed()
+            if np.random.random() < 0.03:
+                act = [copy.deepcopy(action[0]), self._env.action_space.sample()[1]]
+            else:
+                act = copy.deepcopy(action)
+
             obs, reward, done, info = self._env.step(act)
 
             r += reward
