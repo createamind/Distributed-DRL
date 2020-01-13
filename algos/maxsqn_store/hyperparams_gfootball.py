@@ -59,7 +59,9 @@ class HyperParameters:
         self.num_in_pool = 500  # 3 * num_workers
         self.pool_pop_ratio = 0.2
 
-        self.left_side_ratio = 1
+        self.left_side_ratio = 1.0
+
+        self.right_random = 0.03
 
         bot = 0.0
         self_pool = 0.2
@@ -133,10 +135,11 @@ class HyperParameters:
 # reward wrapper
 class FootballWrapper(object):
 
-    def __init__(self, env, action_repeat, reward_scale):
+    def __init__(self, env, action_repeat, reward_scale, right_random=0.0):
         self._env = env
         self.action_repeat = action_repeat
         self.reward_scale = reward_scale
+        self.right_random = right_random
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -150,10 +153,10 @@ class FootballWrapper(object):
         for _ in range(self.action_repeat):
             
             np.random.seed()
-            if np.random.random() < 0.03:
-                act = [copy.deepcopy(action[0]), self._env.action_space.sample()[1]]
+            if np.random.random() < self.right_random:
+                act = np.array([action[0], self._env.action_space.sample()[1]])
             else:
-                act = copy.deepcopy(action)
+                act = np.array(action)
 
             obs, reward, done, info = self._env.step(act)
 

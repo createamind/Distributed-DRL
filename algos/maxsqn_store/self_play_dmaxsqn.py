@@ -295,7 +295,7 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
                                           number_of_right_players_agent_controls=1,
                                           stacked=opt.stacked, representation=opt.representation, render=False)
 
-    env = FootballWrapper(env, opt.action_repeat, opt.reward_scale)
+    env = FootballWrapper(env, opt.action_repeat, opt.reward_scale, opt.right_random)
     # ------ env set up end ------
 
     while True:
