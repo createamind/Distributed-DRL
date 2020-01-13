@@ -2,9 +2,10 @@ import numpy as np
 import os
 import sys
 from gym.spaces import Box
-import datetime
+import datetime, copy
 import gfootball.env as football_env
 from numbers import Number
+from math import ceil
 
 
 class HyperParameters:
@@ -32,14 +33,10 @@ class HyperParameters:
         self.recover = False
         self.checkpoint_freq = 21600  # 21600s = 6h
 
-        self.start_steps = int(5e4)
-        if self.weights_file:
-            self.start_steps = int(10e6)
-
         # gpu memory fraction
         self.gpu_fraction = 0.3
 
-        self.hidden_size = (300, 400, 300)
+        self.hidden_size = (600, 800, 600)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
@@ -62,12 +59,22 @@ class HyperParameters:
         self.num_in_pool = 500  # 3 * num_workers
         self.pool_pop_ratio = 0.2
 
-        self.left_side_ratio = 0.5
+        self.left_side_ratio = 1.0
 
-        self.bot_worker_ratio = 0.5
-        self.self_play_probability = 0.0  # same-weight self-play ratio
+        self.right_random = 0.02
+
+        bot = 0.0
+        self_pool = 0.2
+        ext_pool = 0.0
+        self_play = 0.8
+
+        assert bot + self_pool + ext_pool + self_play == 1.0
+
+        self.bot_worker_ratio = bot
+        self.self_pool_probability = self_pool/(self_pool+ext_pool+self_play)  # same-weight self-play ratio
+        self.ext_pool_probability = ext_pool/(ext_pool+self_play)
         self.pool_push_freq = int(1e4)
-        self.a_l_ratio = 22
+        self.a_l_ratio = 20000000
 
         self.use_max = False
         self.reward_scale = 180
@@ -81,15 +88,19 @@ class HyperParameters:
         self.gamma = 0.997
 
         # self.num_buffers = 1
-        self.num_buffers = self.num_workers // 20 + 1
+        self.num_buffers = self.num_workers // 25 + 1
         if self.model == 'cnn':
             self.buffer_size = int(3e4)
         else:
-            self.buffer_size = int(3e6)
+            self.buffer_size = int(3e3)
 
         self.buffer_size = self.buffer_size // self.num_buffers
 
-        self.lr = 5e-5
+        self.start_steps = int(33) // self.num_buffers
+        if self.weights_file:
+            self.start_steps = self.buffer_size
+
+        self.lr = 1e-5
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
@@ -98,6 +109,8 @@ class HyperParameters:
         self.Ln = 5
         self.action_repeat = 3
         self.max_ep_len = 2990
+        self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
+
         self.save_freq = 1
 
         self.mu_speed = 7e6
@@ -122,10 +135,11 @@ class HyperParameters:
 # reward wrapper
 class FootballWrapper(object):
 
-    def __init__(self, env, action_repeat, reward_scale):
+    def __init__(self, env, action_repeat, reward_scale, right_random=0.0):
         self._env = env
         self.action_repeat = action_repeat
         self.reward_scale = reward_scale
+        self.right_random = right_random
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -137,7 +151,14 @@ class FootballWrapper(object):
     def step(self, action):
         r = 0.0
         for _ in range(self.action_repeat):
-            obs, reward, done, info = self._env.step(action)
+
+            np.random.seed()
+            if np.random.random() < self.right_random:
+                act = np.array([action[0], self._env.action_space.sample()[1]])
+            else:
+                act = np.array(action)
+
+            obs, reward, done, info = self._env.step(act)
 
             r += reward
 
