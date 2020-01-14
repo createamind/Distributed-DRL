@@ -61,7 +61,7 @@ class HyperParameters:
 
         self.left_side_ratio = 1.0
 
-        self.right_random = 0.02
+        self.right_random = 0.2
 
         bot = 0.0
         self_pool = 0.2
@@ -154,7 +154,8 @@ class FootballWrapper(object):
             
             np.random.seed()
             if np.random.random() < self.right_random:
-                act = np.array([action[0], self._env.action_space.sample()[1]])
+                # act = np.array([action[0], self._env.action_space.sample()[1]])
+                act = np.array([action[0], 0])
             else:
                 act = np.array(action)
 
