@@ -157,6 +157,8 @@ class ParameterServer(object):
             self.weights = dict(zip(keys, values))
             self.weights_pool = [copy.deepcopy(self.weights)]
 
+        self.latest_weights = copy.deepcopy(self.weights)
+
     def push(self, keys, values):
         values = [value.copy() for value in values]
         for key, value in zip(keys, values):
@@ -173,6 +175,9 @@ class ParameterServer(object):
         np.random.seed()
         if np.random.random() < opt.pool_pop_ratio:
             self.weights_pool.pop(0)
+
+    def latest_push(self):
+        self.latest_weights = copy.deepcopy(self.weights)
 
     def pool_pull(self, keys):
         # if np.random.random() < 0.2:
@@ -200,6 +205,9 @@ class ParameterServer(object):
 
     def get_weights(self):
         return copy.deepcopy(self.weights)
+
+    def latest_pull(self, keys):
+        return [self.latest_weights[key] for key in keys]
 
     # save weights to disk
     def save_weights(self):
@@ -277,6 +285,8 @@ def worker_train(ps, replay_buffer, opt, learner_index):
             cache.q2.put(agent.get_weights())
         if cnt % opt.pool_push_freq == 0:
             ps.pool_push.remote()
+        if cnt % 300 == 0:
+            ps.latest_push.remote()
         cnt += 1
 
 
@@ -354,18 +364,20 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
 
         ################################## deques reset
 
-        weights = ray.get(ps.pull.remote(keys))
+        our_weights = ray.get(ps.pull.remote(keys))
         is_self_play = "self_play"
-        our_agent.set_weights(keys, weights)
+        our_agent.set_weights(keys, our_weights)
+        opp_weights = ray.get(ps.pull.remote(keys)) 
+        # opp_weights = ray.get(ps.latest_pull.remote(keys)) 
         np.random.seed()
         if np.random.random() < opt.self_pool_probability:
-            weights = ray.get(ps.pool_pull.remote(keys))
+            opp_weights = ray.get(ps.pool_pull.remote(keys))
             is_self_play = "self pool"
         elif np.random.random() < opt.ext_pool_probability:
-            weights = ray.get(ps.ext_pool_pull.remote(keys))
+            opp_weights = ray.get(ps.ext_pool_pull.remote(keys))
             is_self_play = "ext pool"
 
-        opp_agent.set_weights(keys, weights)
+        opp_agent.set_weights(keys, opp_weights)
 
         # for a_l_ratio control
         np.random.seed()
