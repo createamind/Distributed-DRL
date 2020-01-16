@@ -166,18 +166,22 @@ class Learner(object):
                      }
 
         outs = self.sess.run(self.step_ops, feed_dict)
+        q1_value = np.mean(outs[2])
+        q2_value = np.mean(outs[3])
         if cnt % 500 == 0:
             summary_str = self.sess.run(self.train_ops, feed_dict={
                 self.train_vars[0]: outs[0],
                 self.train_vars[1]: outs[1],
-                self.train_vars[2]: np.mean(outs[2]),
-                self.train_vars[3]: np.mean(outs[3]),
+                self.train_vars[2]: q1_value,
+                self.train_vars[3]: q2_value,
                 self.train_vars[4]: np.mean(outs[4]),
                 self.train_vars[5]: outs[5],
             })
 
             self.writer.add_summary(summary_str, cnt)
             self.writer.flush()
+
+        return q1_value
 
     def compute_gradients(self, x, y):
         pass
