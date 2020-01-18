@@ -285,7 +285,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
             cache.q2.put(agent.get_weights())
         # if cnt % opt.pool_push_freq == 0 and (q1_value > 25.0 or cnt < 0e5):
         #    ps.pool_push.remote()
-        if cnt % 10000 == 0 and (q1_value > 20.0 or cnt < 0e5):
+        if cnt % 9000 == 0 and (q1_value > 20.0 or cnt < 3e5):
             ps.latest_push.remote()
             ps.pool_push.remote()
         cnt += 1
