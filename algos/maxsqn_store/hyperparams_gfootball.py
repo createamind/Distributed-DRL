@@ -36,7 +36,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.3
 
-        self.hidden_size = (600, 800, 600)
+        self.hidden_size = (300, 400, 300)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
@@ -57,11 +57,11 @@ class HyperParameters:
         self.num_learners = 1
 
         self.num_in_pool = 500  # 3 * num_workers
-        self.pool_pop_ratio = 0.2
+        self.pool_pop_ratio = 0.25
 
         self.left_side_ratio = 1.0
 
-        self.right_random = 0.2
+        self.right_random = 0.015
 
         bot = 0.0
         self_pool = 0.2
@@ -86,21 +86,24 @@ class HyperParameters:
         self.c_regularizer = 0.0
 
         self.gamma = 0.997
-
+        
+        self.max_ep_len = 2990
+        self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
+        
         # self.num_buffers = 1
         self.num_buffers = self.num_workers // 25 + 1
         if self.model == 'cnn':
-            self.buffer_size = int(3e4)
+            self.buffer_size = int(2.5e6) // self.buffer_store_len
         else:
-            self.buffer_size = int(3e3)
+            self.buffer_size = int(2.5e6) // self.buffer_store_len
 
         self.buffer_size = self.buffer_size // self.num_buffers
 
-        self.start_steps = int(33) // self.num_buffers
+        self.start_steps = (int(5e4) // self.buffer_store_len )// self.num_buffers
         if self.weights_file:
             self.start_steps = self.buffer_size
 
-        self.lr = 1e-5
+        self.lr = 4e-5
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
@@ -108,8 +111,6 @@ class HyperParameters:
 
         self.Ln = 5
         self.action_repeat = 3
-        self.max_ep_len = 2990
-        self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
 
         self.save_freq = 1
 
@@ -154,8 +155,8 @@ class FootballWrapper(object):
             
             np.random.seed()
             if np.random.random() < self.right_random:
-                # act = np.array([action[0], self._env.action_space.sample()[1]])
-                act = np.array([action[0], 0])
+                act = np.array([action[0], self._env.action_space.sample()[1]])
+                # act = np.array([action[0], 0])
             else:
                 act = np.array(action)
 
