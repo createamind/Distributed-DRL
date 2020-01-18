@@ -77,7 +77,7 @@ class HyperParameters:
         self.a_l_ratio = 20000000
 
         self.use_max = False
-        self.reward_scale = 180
+        self.reward_scale = 150
         self.alpha = 0.1
         # self.alpha = "auto"
         self.target_entropy = 0.5
@@ -87,6 +87,9 @@ class HyperParameters:
 
         self.gamma = 0.997
         
+        
+        self.Ln = 5
+        self.action_repeat = 3
         self.max_ep_len = 2990
         self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
         
@@ -108,9 +111,6 @@ class HyperParameters:
 
         self.steps_per_epoch = 5000
         self.batch_size = 256
-
-        self.Ln = 5
-        self.action_repeat = 3
 
         self.save_freq = 1
 
