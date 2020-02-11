@@ -285,7 +285,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
             cache.q2.put(agent.get_weights())
         # if cnt % opt.pool_push_freq == 0 and (q1_value > 25.0 or cnt < 0e5):
         #    ps.pool_push.remote()
-        if cnt % 9000 == 0 and (q1_value > 20.0 or cnt < 3e5):
+        if cnt % 19000 == 0 and (q1_value > 19.0 or cnt < 3e5):
             ps.latest_push.remote()
             ps.pool_push.remote()
         cnt += 1
@@ -432,16 +432,21 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
             # End of episode. Training (ep_len times).
             if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
 
-                replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(our_o_queue, our_a_r_d_queue,
+                a_arr = np.array(our_a_r_d_queue)[:,0]
+                num_diff = sum((a_arr[-20:]-a_arr[-1]).astype(bool))
+                print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side],'num_diff:',num_diff)
+                if num_diff >= 2:
+                    
+                    replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(our_o_queue, our_a_r_d_queue,
                                                                                     worker_index)
-                learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
-                print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
+                    learner_steps, actor_steps, _ = ray.get(replay_buffer[rand_buff].get_counts.remote())
+                    # print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side])
 
-                # for a_l_ratio control
-                learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
-                while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
-                    time.sleep(1)
+                    # for a_l_ratio control
                     learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
+                    while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
+                        time.sleep(1)
+                        learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
                 break
 
@@ -630,7 +635,7 @@ if __name__ == '__main__':
     num_bot_worker = int(opt.bot_worker_ratio * FLAGS.num_workers)
     for i in range(FLAGS.num_workers-num_bot_worker):
         worker_rollout_self_play.remote(ps, replay_buffer, opt, i)
-        time.sleep(3)
+        time.sleep(1)
     for i in range(num_bot_worker):
         worker_rollout_bot.remote(ps, replay_buffer, opt, i)
         time.sleep(3)
