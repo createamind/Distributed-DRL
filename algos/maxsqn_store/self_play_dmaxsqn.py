@@ -285,7 +285,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
             cache.q2.put(agent.get_weights())
         # if cnt % opt.pool_push_freq == 0 and (q1_value > 25.0 or cnt < 0e5):
         #    ps.pool_push.remote()
-        if cnt % 19000 == 0 and (q1_value > 19.0 or cnt < 3e5):
+        if cnt % 3000 == 0 and (q1_value > 0.0 or cnt < 3e5):
             ps.latest_push.remote()
             ps.pool_push.remote()
         cnt += 1
@@ -435,7 +435,7 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
                 a_arr = np.array(our_a_r_d_queue)[:,0]
                 num_diff = sum((a_arr[-20:]-a_arr[-1]).astype(bool))
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'our_side:', our_side, 'is_self_play:', is_self_play, 'rollout_ep_ret:', ep_ret[our_side],'num_diff:',num_diff)
-                if num_diff >= 2:
+                if num_diff >= 0:
                     
                     replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].store.remote(our_o_queue, our_a_r_d_queue,
                                                                                     worker_index)

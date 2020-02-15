@@ -36,7 +36,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.3
 
-        self.hidden_size = (600, 800, 600)
+        self.hidden_size = (400, 300, 400)
 
         env_football = football_env.create_environment(env_name=self.env_name, stacked=self.stacked,
                                                        representation=self.representation, render=False)
@@ -56,17 +56,17 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.num_in_pool = 500  # 3 * num_workers
-        self.pool_pop_ratio = 0.25
+        self.num_in_pool = 5000  # 3 * num_workers
+        self.pool_pop_ratio = 0.333
 
         self.left_side_ratio = 1.0
 
         self.right_random = 0.0
 
         bot = 0.0
-        self_pool = 0.2
+        self_pool = 0.999
         ext_pool = 0.0
-        self_play = 0.8
+        self_play = 0.001
 
         assert bot + self_pool + ext_pool + self_play == 1.0
 
@@ -106,11 +106,11 @@ class HyperParameters:
         if self.weights_file:
             self.start_steps = self.buffer_size
 
-        self.lr = 4e-5
+        self.lr = 1e-4
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
-        self.batch_size = 512
+        self.batch_size = 5120
 
         self.save_freq = 1
 
