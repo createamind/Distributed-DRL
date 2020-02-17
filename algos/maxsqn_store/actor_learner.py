@@ -299,6 +299,7 @@ class Actor(object):
             # TODO
 
             rew = []
+            ave_ret = 0.0
             for j in range(n):
                 o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
                 while not d:
@@ -307,7 +308,8 @@ class Actor(object):
                     ep_ret += r
                     ep_len += 1
                 rew.append(ep_ret)
-                print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
+                ave_ret = ( ave_ret*j + ep_ret )/(j+1)
+                print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret, 'ave_ret:',ave_ret,' (',j,'-',n,')')
 
             test_reward = sum(rew) / n
 
