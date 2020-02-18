@@ -200,7 +200,7 @@ class Cache(object):
 
 
 # TODO
-@ray.remote(num_cpus=2, num_gpus=1, max_calls=1)
+@ray.remote(num_cpus=2)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]

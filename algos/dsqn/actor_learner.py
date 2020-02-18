@@ -122,7 +122,7 @@ class Learner(object):
             else:
                 self.sess = tf.Session(
                     config=tf.ConfigProto(
-                        device_count={'GPU': 0},
+                        # device_count={'GPU': 0},
                         intra_op_parallelism_threads=1,
                         inter_op_parallelism_threads=1))
 
@@ -241,7 +241,7 @@ class Actor(object):
 
             self.sess = tf.Session(
                 config=tf.ConfigProto(
-                    device_count={'GPU': 0},
+                    # device_count={'GPU': 0},
                     intra_op_parallelism_threads=1,
                     inter_op_parallelism_threads=1))
 
