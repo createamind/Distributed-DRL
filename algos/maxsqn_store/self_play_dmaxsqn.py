@@ -280,12 +280,13 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         q1_value = agent.train(batch, cnt)
+        time.sleep(0.2)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
         # if cnt % opt.pool_push_freq == 0 and (q1_value > 25.0 or cnt < 0e5):
         #    ps.pool_push.remote()
-        if cnt % 3000 == 0 and (q1_value > 0.0 or cnt < 3e5):
+        if cnt % 3000 == 0:# and (q1_value > 0.0 or cnt < 3e5):
             ps.latest_push.remote()
             ps.pool_push.remote()
         cnt += 1
