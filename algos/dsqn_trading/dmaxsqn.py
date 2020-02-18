@@ -32,6 +32,7 @@ flags.DEFINE_string("ext_weights_folder_path", "", "empty means False. ")
 flags.DEFINE_float("a_l_ratio", 10000, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 flags.DEFINE_string("checkpoint_path", "", "empty means opt.save_dir. ")
+flags.DEFINE_integer("num_gpus", 0, "number of gpus")
 
 
 @ray.remote(num_cpus=2)
@@ -200,7 +201,7 @@ class Cache(object):
 
 
 # TODO
-@ray.remote(num_cpus=2)
+@ray.remote(num_cpus=2, num_gpus=FLAGS.num_gpus, max_calls= 1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -306,7 +307,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             # if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-            if d:
+            if d or ep_len > opt.max_ep_len:
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)

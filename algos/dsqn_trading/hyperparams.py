@@ -13,7 +13,7 @@ from tradingenv import TradingEnv
 class HyperParameters:
     def __init__(self, env_name, exp_name, num_workers, a_l_ratio, weights_file):
         # parameters set
-        print(__file__)
+
         self.exp_name = exp_name
         self.env_name = env_name
 
