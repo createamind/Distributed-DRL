@@ -329,7 +329,7 @@ class Actor(object):
             print('- update frequency:', update_frequency, 'total time (hrs):', total_time/3600)
             print("----------------------------------")
 
-            if last_learner_steps // opt.save_interval > save_times:
+            if True: # last_learner_steps // opt.save_interval > save_times:
                 with open(opt.save_dir + "/" + str(last_learner_steps / 1e6) + "M_" + str(
                         test_reward) + "_weights.pickle", "wb") as pickle_out:
                     pickle.dump(weights_all, pickle_out)

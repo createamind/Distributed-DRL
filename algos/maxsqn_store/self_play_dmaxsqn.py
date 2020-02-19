@@ -369,8 +369,8 @@ def worker_rollout_self_play(ps, replay_buffer, opt, worker_index):
         our_weights = ray.get(ps.pull.remote(keys))
         is_self_play = "self_play"
         our_agent.set_weights(keys, our_weights)
-        # opp_weights = ray.get(ps.pull.remote(keys)) 
-        opp_weights = ray.get(ps.latest_pull.remote(keys)) 
+        opp_weights = our_weights 
+        # opp_weights = ray.get(ps.latest_pull.remote(keys)) 
         np.random.seed()
         if np.random.random() < opt.self_pool_probability:
             opp_weights = ray.get(ps.pool_pull.remote(keys))

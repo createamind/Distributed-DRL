@@ -64,9 +64,9 @@ class HyperParameters:
         self.right_random = 0.0
 
         bot = 0.0
-        self_pool = 0.3
+        self_pool = 0.2
         ext_pool = 0.0
-        self_play = 0.7
+        self_play = 0.8
 
         assert bot + self_pool + ext_pool + self_play == 1.0
 
@@ -163,6 +163,10 @@ class FootballWrapper(object):
             obs, reward, done, info = self._env.step(act)
 
             r += reward
+
+            if obs[0][95] and not obs[0][108]:
+                r -= 1.0/self.reward_scale
+                print("not normal mode")
 
             if done:
                 return obs, r * self.reward_scale, done, info
