@@ -5,7 +5,7 @@ import ray
 import gym
 from collections import deque
 
-from hyperparams import HyperParameters, Wrapper
+from hyperparams import HyperParameters
 from actor_learner import Actor, Learner
 
 import os
@@ -16,21 +16,23 @@ import copy
 import inspect
 import json
 from ray.rllib.utils.compression import pack, unpack
+from tradingenv import TradingEnv
 
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
+flags.DEFINE_string("env_name", "tradinggame", "game env")
 flags.DEFINE_string("exp_name", "Exp1W111", "experiments name")
-flags.DEFINE_integer("num_workers", 1, "number of workers")
+flags.DEFINE_integer("num_workers", 10, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False. "
                                         "[Maxret_weights.pickle] means restore weights from this pickle file.")
 flags.DEFINE_string("weights_folder_path", "", "empty means False. ")
 flags.DEFINE_string("ext_weights_folder_path", "", "empty means False. ")
-flags.DEFINE_float("a_l_ratio", 10, "actor_steps / learner_steps")
+flags.DEFINE_float("a_l_ratio", 10000, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 flags.DEFINE_string("checkpoint_path", "", "empty means opt.save_dir. ")
+flags.DEFINE_integer("num_gpus", 0, "number of gpus")
 
 
 @ray.remote(num_cpus=2)
@@ -182,7 +184,6 @@ class Cache(object):
         q1.put(copy.deepcopy(ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
 
         while True:
-            # print(q1.qsize())
             if q1.qsize() < 10:
                 q1.put(copy.deepcopy(
                     ray.get(replay_buffer[np.random.choice(opt.num_buffers, 1)[0]].sample_batch.remote())))
@@ -200,7 +201,7 @@ class Cache(object):
 
 
 # TODO
-@ray.remote(num_cpus=2)
+@ray.remote(num_cpus=2, num_gpus=FLAGS.num_gpus, max_calls= 1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -213,8 +214,10 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
     cnt = 1
     while True:
+
         # time1 = time.time()
         batch = cache.q1.get()
+
         # time2 = time.time()
         # print('cache get time:', time2-time1)
         if opt.model == "cnn":
@@ -241,7 +244,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     while True:
         # ------ env set up ------
 
-        env = gym.make(opt.env_name)
+        env = TradingEnv()
         # env = Wrapper(env, opt.action_repeat, opt.reward_scale)
         # ------ env set up end ------
 
@@ -304,7 +307,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
             # End of episode. Training (ep_len times).
             # if d or (ep_len * opt.action_repeat >= opt.max_ep_len):
-            if d:
+            if d or ep_len > opt.max_ep_len:
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
                 print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
@@ -337,7 +340,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 @ray.remote
 def worker_test(ps, replay_buffer, opt):
     agent = Actor(opt, job="main")
-    test_env = gym.make(opt.env_name)
+    test_env = TradingEnv()
     agent.test(ps, replay_buffer, opt, test_env)
 
 
@@ -352,7 +355,7 @@ if __name__ == '__main__':
     if FLAGS.recover:
         opt.recover = True
     All_Parameters = copy.deepcopy(vars(opt))
-    All_Parameters["wrapper"] = inspect.getsource(Wrapper)
+    # All_Parameters["wrapper"] = inspect.getsource(Wrapper)
     import importlib
 
     All_Parameters["obs_space"] = ""

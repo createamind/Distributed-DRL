@@ -122,7 +122,7 @@ class Learner(object):
             else:
                 self.sess = tf.Session(
                     config=tf.ConfigProto(
-                        # device_count={'GPU': 0},
+                        device_count={'GPU': 0},
                         intra_op_parallelism_threads=1,
                         inter_op_parallelism_threads=1))
 
@@ -241,7 +241,7 @@ class Actor(object):
 
             self.sess = tf.Session(
                 config=tf.ConfigProto(
-                    # device_count={'GPU': 0},
+                    device_count={'GPU': 0},
                     intra_op_parallelism_threads=1,
                     inter_op_parallelism_threads=1))
 
@@ -297,7 +297,7 @@ class Actor(object):
             rew = []
             for j in range(n):
                 o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
-                while not d:
+                while not d and ep_len < 100:
                     # Take deterministic actions at test time
                     o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
                     ep_ret += r
