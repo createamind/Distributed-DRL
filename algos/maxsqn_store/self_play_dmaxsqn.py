@@ -280,7 +280,7 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         q1_value = agent.train(batch, cnt)
-        time.sleep(0.2)
+        time.sleep(0.4)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())

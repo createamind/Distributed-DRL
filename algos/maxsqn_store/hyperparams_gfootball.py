@@ -56,12 +56,12 @@ class HyperParameters:
         self.num_workers = num_workers
         self.num_learners = 1
 
-        self.num_in_pool = 10000  # 3 * num_workers
+        self.num_in_pool = 500  # 3 * num_workers
         self.pool_pop_ratio = 0.333
 
         self.left_side_ratio = 1.0
 
-        self.right_random = 0.015
+        self.right_random = 0.0
 
         bot = 0.0
         self_pool = 0.2
@@ -78,7 +78,7 @@ class HyperParameters:
 
         self.use_max = False
         self.reward_scale = 150
-        self.alpha = 0.1
+        self.alpha = 0.2
         # self.alpha = "auto"
         self.target_entropy = 0.5
 
