@@ -88,8 +88,8 @@ class HyperParameters:
         self.gamma = 0.997
         
         
-        self.Ln = 5
-        self.action_repeat = 3
+        self.Ln = 7
+        self.action_repeat = 2
         self.max_ep_len = 2990
         self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
         
@@ -106,7 +106,7 @@ class HyperParameters:
         if self.weights_file:
             self.start_steps = self.buffer_size
 
-        self.lr = 1e-4
+        self.lr = 5e-5
         self.polyak = 0.995
 
         self.steps_per_epoch = 5000
@@ -165,7 +165,7 @@ class FootballWrapper(object):
             r += reward
 
             if obs[0][95] and not obs[0][108]:
-                r -= 0.1/self.reward_scale
+                #r -= 0.1/self.reward_scale
                 print("not normal mode")
 
             if done:

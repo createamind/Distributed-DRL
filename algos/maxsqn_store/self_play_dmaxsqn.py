@@ -280,13 +280,13 @@ def worker_train(ps, replay_buffer, opt, learner_index):
         if opt.model == "cnn":
             batch['obs'] = np.array([[unpack(o) for o in lno] for lno in batch['obs']])
         q1_value = agent.train(batch, cnt)
-        time.sleep(0.4)
+        time.sleep(0.015)
         # TODO cnt % 300 == 0 before
         if cnt % 100 == 0:
             cache.q2.put(agent.get_weights())
         # if cnt % opt.pool_push_freq == 0 and (q1_value > 25.0 or cnt < 0e5):
         #    ps.pool_push.remote()
-        if cnt % 3000 == 0:# and (q1_value > 0.0 or cnt < 3e5):
+        if cnt % 3000 == 0 and (q1_value > 10.0 or cnt < 0e5):
             ps.latest_push.remote()
             ps.pool_push.remote()
         cnt += 1
@@ -636,10 +636,10 @@ if __name__ == '__main__':
     num_bot_worker = int(opt.bot_worker_ratio * FLAGS.num_workers)
     for i in range(FLAGS.num_workers-num_bot_worker):
         worker_rollout_self_play.remote(ps, replay_buffer, opt, i)
-        time.sleep(1)
+        time.sleep(0.2)
     for i in range(num_bot_worker):
         worker_rollout_bot.remote(ps, replay_buffer, opt, i)
-        time.sleep(3)
+        time.sleep(0.2)
     # task_rollout = [worker_rollout.remote(ps, replay_buffer, opt, i) for i in range(FLAGS.num_workers)]
 
     if not opt.recover:
@@ -650,7 +650,7 @@ if __name__ == '__main__':
             print('start steps before learning:', size, '/', opt.start_steps)
             time.sleep(1)
     else:
-        time.sleep(3)
+        time.sleep(0.0)
 
     task_train = [worker_train.remote(ps, replay_buffer, opt, i) for i in range(opt.num_learners)]
 
