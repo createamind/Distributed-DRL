@@ -51,9 +51,22 @@ for j in range(1, n + 1):
     test_env = football_env.create_environment(env_name=opt.env_name, stacked=opt.stacked,representation=opt.representation, render=False)
 
     o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
+    
+    cnt_pause = 0
     while not d:
+
         action = agent.get_action(o, True)
-        # action = test_env.action_space.sample()
+
+        # handling env stuck
+        if cnt_pause > 0 and o[108]:
+            # print("env getting stuck.....", cnt_pause, 'steps')
+            cnt_pause = 0
+        if not o[108]:
+            cnt_pause += 1
+            if cnt_pause <= 50:
+                action = agent.get_action(o, False)
+            else:
+                action = test_env.action_space.sample()
 
         o, r, d, _ = test_env.step(action)
         # time.sleep(0.03)

@@ -58,12 +58,28 @@ for j in range(1, n + 1):
 
     o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
     retl,retr=0,0
+    cnt_pause = 0
     while not d:
         left_action = left_agent.get_action(o[0], True)
         # left_action = test_env.action_space.sample()[0]
 
         # right_action = test_env.action_space.sample()[0]
         right_action = right_agent.get_action(o[1], True)
+
+        # handling env stuck
+        if cnt_pause > 0 and o[0][108]:
+            # print("env getting stuck.....", cnt_pause, 'steps')
+            cnt_pause = 0
+        if not o[0][108]:
+            cnt_pause += 1
+            if cnt_pause <= 50:
+                left_action = left_agent.get_action(o[0], False)
+                right_action = right_agent.get_action(o[1], False)
+            else:
+                left_action = test_env.action_space.sample()[0]
+                right_action = test_env.action_space.sample()[0]
+
+
         action = [left_action, right_action]
 
         o, r, d, _ = test_env.step(action)
