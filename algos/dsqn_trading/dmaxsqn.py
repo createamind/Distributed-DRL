@@ -16,7 +16,8 @@ import copy
 import inspect
 import json
 from ray.rllib.utils.compression import pack, unpack
-from tradingenv import TradingEnv
+sys.path.append("/home/shuai/trading-game")
+from env import TradingEnv
 
 
 flags = tf.app.flags
@@ -32,7 +33,7 @@ flags.DEFINE_string("ext_weights_folder_path", "", "empty means False. ")
 flags.DEFINE_float("a_l_ratio", 10000, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
 flags.DEFINE_string("checkpoint_path", "", "empty means opt.save_dir. ")
-flags.DEFINE_integer("num_gpus", 0, "number of gpus")
+flags.DEFINE_integer("num_gpus", 1, "number of gpus")
 
 
 @ray.remote(num_cpus=2)

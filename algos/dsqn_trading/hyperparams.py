@@ -5,9 +5,8 @@ from gym.spaces import Box
 import datetime
 import gym
 from math import ceil
-# sys.path.append('/home/zdx/trading-game/game')
-# print(__file__)
-from tradingenv import TradingEnv
+sys.path.append("/home/shuai/trading-game")
+from env import TradingEnv
 
 
 class HyperParameters:
