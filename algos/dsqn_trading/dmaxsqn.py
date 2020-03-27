@@ -16,9 +16,9 @@ import copy
 import inspect
 import json
 from ray.rllib.utils.compression import pack, unpack
+
 sys.path.append("/home/shuai/trading-game")
 from env import TradingEnv
-
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
@@ -116,9 +116,12 @@ class ReplayBuffer:
         self.buffer_r = np.load(checkpoint_path + '/buffer_r-' + str(self.buffer_index) + '.npy')
         self.buffer_d = np.load(checkpoint_path + '/buffer_d-' + str(self.buffer_index) + '.npy')
         buffer_counts = np.load(checkpoint_path + '/buffer_counts-' + str(self.buffer_index) + '.npy')
-        self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps = buffer_counts[0], buffer_counts[1], buffer_counts[2], buffer_counts[3], buffer_counts[4]
+        self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps = buffer_counts[0], buffer_counts[1], \
+                                                                                   buffer_counts[2], buffer_counts[3], \
+                                                                                   buffer_counts[4]
         print("****** buffer number " + str(self.buffer_index) + " restored! ******")
-        print("****** buffer number " + str(self.buffer_index) + " info:", self.ptr, self.size, self.max_size, self.actor_steps, self.learner_steps)
+        print("****** buffer number " + str(self.buffer_index) + " info:", self.ptr, self.size, self.max_size,
+              self.actor_steps, self.learner_steps)
 
 
 @ray.remote
@@ -202,7 +205,7 @@ class Cache(object):
 
 
 # TODO
-@ray.remote(num_cpus=2, num_gpus=FLAGS.num_gpus, max_calls= 1)
+@ray.remote(num_cpus=2, num_gpus=FLAGS.num_gpus, max_calls=1)
 def worker_train(ps, replay_buffer, opt, learner_index):
     agent = Learner(opt, job="learner")
     keys = agent.get_weights()[0]
@@ -234,7 +237,6 @@ def worker_train(ps, replay_buffer, opt, learner_index):
 
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
-
     agent = Actor(opt, job="worker")
     keys = agent.get_weights()[0]
     np.random.seed()
@@ -253,6 +255,7 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
         a_r_d_queue = deque([], maxlen=opt.Ln)
 
         o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
+        ep_score, ep_target_bias = 0, 0
 
         if opt.model == "cnn":
             compressed_o = pack(o)
@@ -279,9 +282,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 a = env.action_space.sample()
                 random_steps += 1
             # Step the env
-            o2, r, d, _ = env.step(a)
+            o2, r, d, info = env.step(a)
 
             ep_ret += r
+            ep_score += info['score']
+            ep_target_bias += info['target_bias']
             ep_len += 1
 
             # Ignore the "done" signal if it comes from hitting the time
@@ -311,7 +316,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             if d or ep_len > opt.max_ep_len:
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
-                print('rollout_ep_len:', ep_len * opt.action_repeat, 'rollout_ep_ret:', ep_ret)
+                print('rollout ep_len:', ep_len * opt.action_repeat, 'ep_score:', ep_score,
+                      'ep_target_bias:', ep_target_bias)
 
                 if steps > opt.start_steps:
                     # update parameters every episode
@@ -320,7 +326,6 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
 
                 o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
 
-
                 t_queue = 1
                 if opt.model == "cnn":
                     compressed_o = pack(o)
@@ -328,12 +333,11 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
                 else:
                     o_queue.append((o,))
 
-
-
                 # for a_l_ratio control
                 learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
 
-                while (actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
+                while (actor_steps - last_actor_steps) / (
+                        learner_steps - last_learner_steps + 1) > opt.a_l_ratio and last_learner_steps > 0:
                     time.sleep(1)
                     learner_steps, actor_steps, _size = ray.get(replay_buffer[rand_buff].get_counts.remote())
 

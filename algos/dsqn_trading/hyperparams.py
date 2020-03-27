@@ -50,7 +50,7 @@ class HyperParameters:
         self.num_learners = 1
 
         self.use_max = False
-        self.reward_scale = 100
+        self.reward_scale = 1
 
         self.alpha = 0.2
         # self.alpha = "auto"

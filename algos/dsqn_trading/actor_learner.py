@@ -295,31 +295,59 @@ class Actor(object):
             # TODO
 
             rew = []
+            reward_target_bias = []
+            reward_score = []
+            apnum = []
+            target_bias = []
+            score = []
             for j in range(n):
                 o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
+                ep_target_bias, ep_reward_target_bias, ep_score, ep_reward_score, ep_apnum = 0, 0, 0, 0, 0
                 while not d and ep_len < 100:
                     # Take deterministic actions at test time
-                    o, r, d, _ = test_env.step(self.get_action(o, deterministic=True))
+                    o, r, d, info = test_env.step(self.get_action(o, deterministic=True))
                     ep_ret += r
                     ep_len += 1
+                    ep_reward_target_bias += info["reward_target_bias"]
+                    ep_reward_score += info["reward_score"]
+                    ep_apnum += info["ap_num"]
+                    ep_target_bias += info["target_bias"]
+                    ep_score += info["score"]
                 rew.append(ep_ret)
+                reward_target_bias.append(ep_reward_target_bias)
+                reward_score.append(ep_reward_score)
+                apnum.append(ep_apnum)
+                target_bias.append(ep_target_bias)
+                score.append(ep_score)
                 print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
 
             test_reward = sum(rew) / n
+            test_reward_target_bias = sum(reward_target_bias) / n
+            test_reward_score = sum(reward_score) / n
+            test_apnum = sum(apnum) / n
+            test_target_bias = sum(target_bias) / n
+            test_score = sum(score) / n
 
             learner_steps, actor_steps, size = ray.get(replay_buffer[0].get_counts.remote())
             time_now = time.time()
             update_frequency = (learner_steps - last_learner_steps) / (time_now - last_time)
+            env_interacts_speed = (actor_steps - last_actor_steps) / (time_now - last_time)
             a_l_ratio = str((actor_steps - last_actor_steps) / (learner_steps - last_learner_steps + 1))[:4]
             total_time = time_now - start_time
 
             print("----------------------------------")
             print("| exp_name:", opt.exp_name)
             print("| test_reward:", test_reward)
+            print("| test_reward_target_bias:", test_reward_target_bias)
+            print("| test_reward_score:", test_reward_score)
+            print("| test_apnum:", test_apnum)
+            print("| test_target_bias:", test_target_bias)
+            print("| test_score:", test_score)
             print("| learner_steps:", last_learner_steps)
             print("| actor_steps:", last_actor_steps)
             print("| buffer_size:", size)
             print("| actual a_l_ratio:", a_l_ratio)
+            print('- actor interacts speed:', env_interacts_speed)
             print('- update frequency:', update_frequency, 'total time (hrs):', total_time/3600)
             print("----------------------------------")
 
@@ -352,8 +380,13 @@ class Actor(object):
 
             summary_str = self.sess.run(self.test_ops, feed_dict={
                 self.test_vars[0]: test_reward,
-                self.test_vars[1]: a_l_ratio,
-                self.test_vars[2]: update_frequency
+                self.test_vars[1]: test_reward_target_bias,
+                self.test_vars[2]: test_reward_score,
+                self.test_vars[3]: test_apnum,
+                self.test_vars[4]: test_target_bias,
+                self.test_vars[5]: test_score,
+                self.test_vars[6]: a_l_ratio,
+                self.test_vars[7]: update_frequency
             })
 
             self.writer.add_summary(summary_str, last_learner_steps)
@@ -362,13 +395,23 @@ class Actor(object):
     # Tensorflow Summary Ops
     def build_summaries(self):
         test_summaries = []
-        episode_reward = tf.Variable(0.)
+        EpRet = tf.Variable(0.)
+        EpRet_target_bias = tf.Variable(0.)
+        EpRet_score = tf.Variable(0.)
+        EpApNum = tf.Variable(0.)
+        EpTarget_bias = tf.Variable(0.)
+        EpScore = tf.Variable(0.)
         a_l_ratio = tf.Variable(0.)
         update_frequency = tf.Variable(0.)
-        test_summaries.append(tf.summary.scalar("Reward", episode_reward))
+        test_summaries.append(tf.summary.scalar("Reward", EpRet))
+        test_summaries.append(tf.summary.scalar("EpRet_target_bias", EpRet_target_bias))
+        test_summaries.append(tf.summary.scalar("EpRet_score", EpRet_score))
+        test_summaries.append(tf.summary.scalar("EpApNum", EpApNum))
+        test_summaries.append(tf.summary.scalar("EpTarget_bias", EpTarget_bias))
+        test_summaries.append(tf.summary.scalar("EpScore", EpScore))
         test_summaries.append(tf.summary.scalar("a_l_ratio", a_l_ratio))
         test_summaries.append(tf.summary.scalar("update_frequency", update_frequency))
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward, a_l_ratio, update_frequency]
+        test_vars = [EpRet, EpRet_target_bias, EpRet_score, EpApNum, EpTarget_bias, EpScore, a_l_ratio, update_frequency]
 
         return test_ops, test_vars
