@@ -303,7 +303,7 @@ class Actor(object):
             for j in range(n):
                 o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
                 ep_target_bias, ep_reward_target_bias, ep_score, ep_reward_score, ep_apnum = 0, 0, 0, 0, 0
-                while not d and ep_len < 100:
+                while not d and ep_len < 3000:
                     # Take deterministic actions at test time
                     o, r, d, info = test_env.step(self.get_action(o, deterministic=True))
                     ep_ret += r
@@ -319,7 +319,8 @@ class Actor(object):
                 apnum.append(ep_apnum)
                 target_bias.append(ep_target_bias)
                 score.append(ep_score)
-                print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
+                # print('test ep_len:', ep_len * opt.action_repeat, 'ep_score:', ep_score,
+                #       'ep_target_bias:', ep_target_bias)
 
             test_reward = sum(rew) / n
             test_reward_target_bias = sum(reward_target_bias) / n

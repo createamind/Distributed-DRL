@@ -9,6 +9,7 @@ from hyperparams import HyperParameters
 from actor_learner import Actor, Learner
 
 import os
+import sys
 import pickle
 import multiprocessing
 import copy
@@ -316,8 +317,8 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
             if d or ep_len > opt.max_ep_len:
                 sample_times, steps, _ = ray.get(replay_buffer[0].get_counts.remote())
 
-                print('rollout ep_len:', ep_len * opt.action_repeat, 'ep_score:', ep_score,
-                      'ep_target_bias:', ep_target_bias)
+                # print('rollout ep_len:', ep_len * opt.action_repeat, 'ep_score:', ep_score,
+                #       'ep_target_bias:', ep_target_bias)
 
                 if steps > opt.start_steps:
                     # update parameters every episode

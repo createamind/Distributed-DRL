@@ -28,7 +28,7 @@ class HyperParameters:
         # gpu memory fraction
         self.gpu_fraction = 0.3
 
-        self.hidden_size = (400, 300)
+        self.hidden_size = (300, 400, 300)
 
         env_gym = TradingEnv()
 
@@ -81,7 +81,7 @@ class HyperParameters:
 
         self.Ln = 1
         self.action_repeat = 1
-        self.max_ep_len = 100
+        self.max_ep_len = 3000
         # self.buffer_store_len = ceil(self.max_ep_len / self.action_repeat)
 
         self.save_freq = 1
