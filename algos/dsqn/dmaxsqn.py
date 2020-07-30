@@ -227,7 +227,65 @@ def worker_train(ps, replay_buffer, opt, learner_index):
             cache.q2.put(agent.get_weights())
         cnt += 1
 
+        
+        
+@ray.remote(num_cpus=2)
+class OAbuffer:
+    def __init__(self, opt):
+        self.max_size = 2*opt.num_workers
+        self.bufferA = [None for _ in range(self.max_size)]
+        self.bufferO = []
+        self.ptr_a = 0
+        self.ptr_o = 0
 
+    def push_obs(self, ob):
+        self.bufferO.append(ob)
+        idx = self.ptr_o
+        self.ptr_o = (self.ptr_o + 1) % self.max_size
+        return idx
+    def pull_act_pilog(self, idx):
+        act_pilog = self.bufferA[idx]
+        self.bufferA[idx] = None
+        return act_pilog
+
+
+    def pull_o(self):
+        if len(self.bufferO)>1:
+            obs = copy.deepcopy(self.bufferO)
+            self.bufferO = []
+            return obs
+        else:
+            return None
+    def put_a(self, act_pilogs):
+        act, pilogs = act_pilogs
+        for i in range(len(act)):
+            self.bufferA[self.ptr_a] = copy.deepcopy([act[i], pilogs[i]])
+            self.ptr_a = (self.ptr_a + 1) % self.max_size
+        
+
+@ray.remote(num_cpus=2, num_gpus=1, max_calls=1)
+def worker_actor(ps, oa_buffer):
+    agent = Learner(opt, job="actor")
+    keys = agent.get_weights()[0]
+    weights = ray.get(ps.pull.remote(keys))
+    agent.set_weights(keys, weights)
+    cnt_act = 0
+    while True:
+        obs = ray.get(oa_buffer.pull_o.remote())
+        if obs == None:
+            time.sleep(0.0001)
+            continue
+        else:
+            obs = np.array(obs)
+            act_pilogs = agent.get_action_pi_log_1(obs)
+            oa_buffer.put_a.remote(act_pilogs)
+            # pull new weights
+            cnt_act += 1
+            if cnt_act%10 == 0:
+                weights = ray.get(ps.pull.remote(keys))
+                agent.set_weights(keys, weights)        
+
+                
 @ray.remote
 def worker_rollout(ps, replay_buffer, opt, worker_index):
 
