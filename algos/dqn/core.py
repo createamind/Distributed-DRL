@@ -38,11 +38,12 @@ Actor-Critics
 
 
 def q_function(x, x2, hidden_sizes, act_dim, activation=tf.nn.relu, output_activation=None):
-    # vfs
-    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, None)
-    with tf.variable_scope('q'):
-        q = vf_mlp(x)
 
-    q_x2 = vf_mlp(x2)
+    vf_mlp = lambda x: mlp(x, list(hidden_sizes) + [act_dim], activation, None)
+    # Q
+    q_tp = tf.make_template('q1', vf_mlp, create_scope_now_=True)
+
+    q = q_tp(x)
+    q_x2 = q_tp(x2)
 
     return q, q_x2

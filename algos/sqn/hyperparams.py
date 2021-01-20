@@ -23,6 +23,8 @@ class HyperParameters:
 
         self.push_freq = 100
 
+        # alpha need > 0
+        self.alpha = 0.1
         self.gamma = 0.99
 
         self.a_l_ratio = a_l_ratio

@@ -28,31 +28,34 @@ class Learner(object):
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                self.q, self.q_x2 = core.q_function(self.x_ph, self.x2_ph, opt.hidden_size, opt.act_dim)
+                self.mu, self.pi, entropy_x2, q1, q2, q1_mu, q2_mu = core.q_function(self.x_ph, self.x2_ph, opt.alpha,
+                                                                           opt.hidden_size, opt.act_dim)
 
             # Target value network
             with tf.variable_scope('target'):
-                self.q_next, _ = core.q_function(self.x2_ph, self.x2_ph, opt.hidden_size, opt.act_dim)
+                mu_, pi_, entropy_x2_, q1_, q2_, q1_mu_, q2_mu_ = core.q_function(self.x2_ph, self.x2_ph, opt.alpha,
+                                                                                  opt.hidden_size, opt.act_dim)
 
             # Count variables
             var_counts = tuple(core.count_vars(scope) for scope in ['main'])
             print('\nNumber of parameters: total: %d\n' % var_counts)
 
             a_one_hot = tf.one_hot(tf.cast(self.a_ph, tf.int32), depth=opt.act_dim)
-            q_value = tf.reduce_sum(self.q * a_one_hot, axis=1)
+            q1_a = tf.reduce_sum(q1 * a_one_hot, axis=1)
+            q2_a = tf.reduce_sum(q2 * a_one_hot, axis=1)
 
-            # DDQN
-            online_q_x2_a_one_hot = tf.one_hot(tf.argmax(self.q_x2, axis=1), depth=opt.act_dim)
-            q_target = tf.reduce_sum(self.q_next * online_q_x2_a_one_hot, axis=1)
+            # Min Double-Q:
+            min_q_target = tf.minimum(q1_mu_, q2_mu_)
 
-            # DQN
-            # q_target = tf.reduce_max(self.q_next, axis=1)
-
-            # Bellman backup for Q functions, using Clipped Double-Q targets
-            q_backup = tf.stop_gradient(self.r_ph + opt.gamma * (1 - self.d_ph) * q_target)
+            # Bellman backup for Q functions
+            v_backup = tf.stop_gradient(min_q_target - opt.alpha * entropy_x2)
+            q_backup = self.r_ph + opt.gamma * (1 - self.d_ph) * v_backup
 
             # q losses
-            q_loss = 0.5 * tf.reduce_mean((q_backup - q_value) ** 2)
+            # q_loss = 0.5 * tf.reduce_mean((q_backup - q_value) ** 2)
+            q1_loss = 0.5 * tf.reduce_mean((q_backup - q1_a) ** 2)
+            q2_loss = 0.5 * tf.reduce_mean((q_backup - q2_a) ** 2)
+            q_loss = q1_loss + q2_loss
 
             # Value train op
             # (control dep of train_pi_op because sess.run otherwise evaluates in nondeterministic order)
@@ -67,7 +70,7 @@ class Learner(object):
                                           for v_main, v_targ in zip(get_vars('main'), get_vars('target'))])
 
             # All ops to call during one training step
-            self.step_ops = [q_loss, self.q, train_value_op, target_update]
+            self.step_ops = [q_loss, q1, q2, train_value_op, target_update]
 
             # Initializing targets to match main variables
             self.target_init = tf.group([tf.assign(v_targ, v_main)
@@ -158,7 +161,8 @@ class Actor(object):
 
             # Main outputs from computation graph
             with tf.variable_scope('main'):
-                self.q, _ = core.q_function(self.x_ph, self.x2_ph, opt.hidden_size, opt.act_dim)
+                self.mu, self.pi, entropy_x2, q1, q2, q1_mu, q2_mu = core.q_function(self.x_ph, self.x2_ph, opt.alpha,
+                                                                           opt.hidden_size, opt.act_dim)
 
             # Set up summary Ops
             self.test_ops, self.test_vars = self.build_summaries()
@@ -180,7 +184,7 @@ class Actor(object):
             variables_bn = [v for v in variables_all if 'moving_mean' in v.name or 'moving_variance' in v.name]
 
             self.variables = ray.experimental.tf_utils.TensorFlowVariables(
-                self.q, self.sess, input_variables=variables_bn)
+                self.mu, self.sess, input_variables=variables_bn)
 
     def set_weights(self, variable_names, weights):
         self.variables.set_weights(dict(zip(variable_names, weights)))
@@ -191,14 +195,9 @@ class Actor(object):
         values = [weights[key] for key in keys]
         return keys, values
 
-    def get_action(self, o):
-        if np.random.uniform() < 0.97:
-            o = o[np.newaxis, :]
-            actions_value = self.sess.run(self.q, feed_dict={self.x_ph: o})
-            action = np.argmax(actions_value)
-        else:
-            action = np.random.randint(0, self.opt.act_dim)
-        return action
+    def get_action(self, o, deterministic=False):
+        act_op = self.mu if deterministic else self.pi
+        return self.sess.run(act_op, feed_dict={self.x_ph: np.expand_dims(o, axis=0)})[0]
 
     # Tensorflow Summary Ops
     def build_summaries(self):
@@ -232,7 +231,7 @@ class Actor(object):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
 
             while True:
-                a = self.get_action(o)
+                a = self.get_action(o, deterministic=True)
                 # Step the env
                 o, r, d, _ = test_env.step(a)
 

@@ -28,7 +28,7 @@ flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
 flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
-flags.DEFINE_string("exp_name", "ddqn", "experiments name")
+flags.DEFINE_string("exp_name", "sqn", "experiments name")
 flags.DEFINE_integer("num_nodes", 1, "number of nodes")
 flags.DEFINE_integer("num_workers", 6, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False.")
