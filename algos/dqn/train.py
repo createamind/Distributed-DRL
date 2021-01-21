@@ -318,28 +318,29 @@ def worker_test(ps, node_buffer, opt):
         learner_step = np.sum(last_learner_step) - np.sum(start_learner_step)
         alratio = actor_step / (learner_step + 1)
         update_frequency = int(learner_step / (time.time() - start_time))
+        total_learner_step = np.sum(last_learner_step)
 
         print("---------------------------------------------------")
         print("average test reward:", ave_test_reward)
         print("average test score:", ave_score)
-        print("actor_steps:", last_actor_step, "learner_step:", last_learner_step)
         print("frame freq:", np.round((last_actor_step - start_actor_step) / (time.time() - start_time)))
+        print("actor_steps:", np.sum(last_actor_step), "learner_step:", total_learner_step)
         print("actor leaner ratio: %.2f" % alratio)
         print("learner freq:", update_frequency)
         print("Ray total resources:", ray.cluster_resources())
         print("available resources:", ray.available_resources())
         print("---------------------------------------------------")
-        if learner_step < 1000:
+        if learner_step < 100:
             alratio = 0
-        agent.write_tb(ave_test_reward, ave_score, alratio, update_frequency, last_learner_step)
+        agent.write_tb(ave_test_reward, ave_score, alratio, update_frequency, total_learner_step)
 
         total_time = time.time() - init_time
 
-        if last_learner_step // opt.save_interval > save_times:
-            with open(opt.save_dir + "/" + str(last_learner_step / 1e6) + "M_" + str(ave_test_reward) + "_weights.pickle", "wb") as pickle_out:
+        if total_learner_step // opt.save_interval > save_times:
+            with open(opt.save_dir + "/" + str(total_learner_step / 1e6) + "M_" + str(ave_test_reward) + "_weights.pickle", "wb") as pickle_out:
                 pickle.dump(weights_all, pickle_out)
                 print("****** Weights saved by time! ******")
-            save_times = last_learner_step // opt.save_interval
+            save_times = total_learner_step // opt.save_interval
 
         # save everything every checkpoint_freq s
         if total_time // opt.checkpoint_freq > checkpoint_times:

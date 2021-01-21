@@ -216,7 +216,7 @@ class Actor(object):
 
         return test_ops, test_vars
 
-    def write_tb(self, ave_test_reward, ave_score, alratio, update_frequency, last_learner_step):
+    def write_tb(self, ave_test_reward, ave_score, alratio, update_frequency, total_learner_step):
         summary_str = self.sess.run(self.test_ops, feed_dict={
             self.test_vars[0]: ave_test_reward,
             self.test_vars[1]: ave_score,
@@ -224,7 +224,7 @@ class Actor(object):
             self.test_vars[3]: update_frequency
         })
 
-        self.writer.add_summary(summary_str, last_learner_step)
+        self.writer.add_summary(summary_str, total_learner_step)
         self.writer.flush()
 
     def test(self, test_env, n=10):
