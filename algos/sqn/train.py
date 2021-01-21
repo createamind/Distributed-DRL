@@ -7,9 +7,6 @@ import ray
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(ROOT)
-
 from hyperparams import HyperParameters
 from actor_learner import Actor, Learner
 
@@ -17,20 +14,20 @@ import os
 import pickle
 import multiprocessing
 import copy
-
-from collections import deque
-import datetime
-import inspect
 import json
-from ray.rllib.utils.compression import pack, unpack
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT)
+from trading_env import TradingEnv, FrameStack
+
 
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string("env_name", "LunarLander-v2", "game env")
-flags.DEFINE_string("exp_name", "sqn", "experiments name")
+flags.DEFINE_string("env_name", "Trading", "game env")
+flags.DEFINE_string("exp_name", "sqn-trading", "experiments name")
 flags.DEFINE_integer("num_nodes", 1, "number of nodes")
-flags.DEFINE_integer("num_workers", 6, "number of workers")
+flags.DEFINE_integer("num_workers", 12, "number of workers")
 flags.DEFINE_string("weights_file", "", "empty means False.")
 flags.DEFINE_float("a_l_ratio", 10, "actor_steps / learner_steps")
 flags.DEFINE_bool("recover", False, "back training from last checkpoint")
@@ -240,8 +237,12 @@ def worker_rollout(ps, replay_buffer, opt, worker_index):
     keys = agent.get_weights()[0]
     np.random.seed()
 
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(ROOT)
+    from trading_env import TradingEnv, FrameStack
     # ------ env set up ------
-    env = gym.make(opt.env_name)
+    # env = gym.make(opt.env_name)
+    env = TradingEnv(action_scheme_id=3, obs_dim=38)
 
     while True:
 
@@ -291,7 +292,11 @@ def worker_test(ps, node_buffer, opt):
     agent = Actor(opt, job="test")
     keys = agent.get_weights()[0]
 
-    test_env = gym.make(opt.env_name)
+    # test_env = gym.make(opt.env_name)
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(ROOT)
+    from trading_env import TradingEnv, FrameStack
+    test_env = TradingEnv(action_scheme_id=3, obs_dim=38)
 
     init_time = time.time()
     save_times = 0
@@ -306,7 +311,7 @@ def worker_test(ps, node_buffer, opt):
         start_actor_step, start_learner_step, _ = get_al_status(node_buffer)
         start_time = time.time()
 
-        ave_test_reward = agent.test(test_env, 10)
+        ave_test_reward, ave_score = agent.test(test_env, 10)
 
         last_actor_step, last_learner_step, _ = get_al_status(node_buffer)
         actor_step = np.sum(last_actor_step) - np.sum(start_actor_step)
@@ -316,6 +321,7 @@ def worker_test(ps, node_buffer, opt):
 
         print("---------------------------------------------------")
         print("average test reward:", ave_test_reward)
+        print("average test score:", ave_score)
         print("actor_steps:", last_actor_step, "learner_step:", last_learner_step)
         print("frame freq:", np.round((last_actor_step - start_actor_step) / (time.time() - start_time)))
         print("actor leaner ratio: %.2f" % alratio)
@@ -325,7 +331,7 @@ def worker_test(ps, node_buffer, opt):
         print("---------------------------------------------------")
         if learner_step < 1000:
             alratio = 0
-        agent.write_tb(ave_test_reward, alratio, update_frequency, last_learner_step)
+        agent.write_tb(ave_test_reward, ave_score, alratio, update_frequency, last_learner_step)
 
         total_time = time.time() - init_time
 
@@ -369,7 +375,8 @@ if __name__ == '__main__':
     # ray.init()
     ray.init(resources={"node0": 256})
 
-    env = gym.make(FLAGS.env_name)
+    # env = gym.make(FLAGS.env_name)
+    env = TradingEnv(action_scheme_id=3, obs_dim=38)
 
     # ------ HyperParameters ------
     opt = HyperParameters(env, FLAGS.env_name, FLAGS.exp_name, FLAGS.num_nodes, FLAGS.num_workers, FLAGS.a_l_ratio, FLAGS.weights_file)

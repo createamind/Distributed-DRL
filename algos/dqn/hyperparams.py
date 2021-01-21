@@ -66,10 +66,10 @@ class HyperParameters:
 
         self.seed = 0
 
-        cwd = os.getcwd()
+        ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        self.summary_dir = cwd + '/tboard_ray'  # Directory for storing tensorboard summary results
-        self.save_dir = cwd + '/' + self.exp_name  # Directory for storing trained model
+        self.summary_dir = ROOT_DIR + '/tboard_ray'  # Directory for storing tensorboard summary results
+        self.save_dir = ROOT_DIR + '/' + self.exp_name  # Directory for storing trained model
         self.save_interval = int(5e5)
 
         self.log_dir = self.summary_dir + "/" + str(datetime.datetime.now()) + "-workers_num:" + \

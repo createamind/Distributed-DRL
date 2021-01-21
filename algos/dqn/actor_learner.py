@@ -204,21 +204,24 @@ class Actor(object):
     def build_summaries(self):
         test_summaries = []
         episode_reward = tf.Variable(0.)
+        episode_score = tf.Variable(0.)
         a_l_ratio = tf.Variable(0.)
         update_frequency = tf.Variable(0.)
         test_summaries.append(tf.summary.scalar("Reward", episode_reward))
+        test_summaries.append(tf.summary.scalar("score", episode_score))
         test_summaries.append(tf.summary.scalar("a_l_ratio", a_l_ratio))
         test_summaries.append(tf.summary.scalar("update_frequency", update_frequency))
         test_ops = tf.summary.merge(test_summaries)
-        test_vars = [episode_reward, a_l_ratio, update_frequency]
+        test_vars = [episode_reward, episode_score, a_l_ratio, update_frequency]
 
         return test_ops, test_vars
 
-    def write_tb(self, ave_test_reward, alratio, update_frequency, last_learner_step):
+    def write_tb(self, ave_test_reward, ave_score, alratio, update_frequency, last_learner_step):
         summary_str = self.sess.run(self.test_ops, feed_dict={
             self.test_vars[0]: ave_test_reward,
-            self.test_vars[1]: alratio,
-            self.test_vars[2]: update_frequency
+            self.test_vars[1]: ave_score,
+            self.test_vars[2]: alratio,
+            self.test_vars[3]: update_frequency
         })
 
         self.writer.add_summary(summary_str, last_learner_step)
@@ -227,6 +230,7 @@ class Actor(object):
     def test(self, test_env, n=10):
 
         test_rets = []
+        scores = []
 
         for _ in range(n):
             o, r, d, ep_ret, ep_len = test_env.reset(), 0, False, 0, 0
@@ -241,9 +245,10 @@ class Actor(object):
 
                 if d:
                     test_rets.append(ep_ret)
+                    scores.append(test_env.rewards[0])
                     # print('test_ep_len:', ep_len, 'test_ep_ret:', ep_ret)
                     break
-        return np.mean(test_rets)
+        return np.mean(test_rets), np.mean(scores)
 
 
 
